@@ -1,0 +1,39 @@
+# Python bytecode and local virtual environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Editor and operating-system files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local ROM images, extracted game assets, and emulator saves
+*.exe
+*.wa
+*.mrg
+*.img
+*.bin
+*.iso
+*.cue
+*.ccd
+*.chd
+*.pbp
+*.mcd
+*.mcs
+*.sav
+*.state
+
+# Local analysis workspace contains extracted game files and third-party source
+/research/
+
+# Logs and generated output
+*.log
+dist/
+build/
+*.spec
