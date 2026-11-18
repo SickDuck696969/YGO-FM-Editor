@@ -17,6 +17,51 @@ PLAYER_NAME_OFFSET = 0x40C
 DECK_SIZE = 40
 CARD_COUNT = 722
 TOURNAMENT_COMPLETE_FLAG = 0x47
+CAMPAIGN_FLAG_DEFEATED_BASE = 0x1F
+FREE_DUEL_UNLOCK_FLAG_BASE = 0x6E0
+
+# These are documented campaign milestones, not guesses at arbitrary scene
+# indices. Checkpoints update the story bits and the corresponding Free Duel
+# unlocks while preserving unrelated collection/password flags.
+CAMPAIGN_CHECKPOINTS = {
+    "festival": {
+        "label": "Festival challenge unlocked",
+        "flags": (0x48, 0x49, 0x4A, 0x4B, 0x6F),
+        "duelists": (),
+    },
+    "tournament": {
+        "label": "Tournament complete · returned to Egypt",
+        "flags": (TOURNAMENT_COMPLETE_FLAG,),
+        "duelists": tuple(range(9, 18)),
+    },
+    "ruins": {
+        "label": "Forbidden Ruins opened",
+        "flags": (0x50, 0x51, 0x52, 0x53),
+        "duelists": (18,),
+    },
+    "hidden_grounds": {
+        "label": "Hidden Dueling Grounds discovered",
+        "flags": (0x5A,),
+        "duelists": (),
+    },
+    "high_mages": {
+        "label": "All five shrines cleared · High Mages defeated",
+        "flags": (0x35, 0x37, 0x39, 0x3B, 0x3D, 0x5D, 0x6D),
+        "duelists": tuple(range(21, 31)),
+    },
+    "labyrinth": {
+        "label": "Labyrinth Mage defeated four times",
+        "flags": (0x69, 0x6A, 0x6B, 0x6C),
+        "duelists": (31,),
+    },
+    "lecture": {"label": "Heard Simon’s evening lecture", "flags": (110,), "duelists": ()},
+    "shrine": {"label": "Saw the mages waiting for Seto", "flags": (77,), "duelists": ()},
+    "seto_first": {"label": "Defeated Seto at the festival grounds", "flags": (), "duelists": (7,)},
+    "kidnapping": {"label": "Witnessed Teana’s kidnapping", "flags": (92,), "duelists": ()},
+    "shop": {"label": "Visited the hidden card shop", "flags": (94,), "duelists": ()},
+    "map": {"label": "Examined the map inside the ruins", "flags": (84,), "duelists": ()},
+    "drawing": {"label": "Examined the drawing in the ruins", "flags": (96,), "duelists": ()},
+}
 
 
 class SaveDataError(ValueError):
@@ -161,6 +206,31 @@ class SaveDataDocument:
 
     def tournament_complete(self) -> bool:
         return self.campaign_flag(TOURNAMENT_COMPLETE_FLAG)
+
+    def campaign_checkpoint(self, checkpoint: str) -> bool:
+        """Return whether every known flag for a named milestone is set."""
+        try:
+            definition = CAMPAIGN_CHECKPOINTS[checkpoint]
+        except KeyError as exc:
+            raise SaveDataError(f"Unknown campaign checkpoint: {checkpoint}.") from exc
+        flags = definition["flags"]
+        duelists = definition["duelists"]
+        return all(self.campaign_flag(flag) for flag in flags) and all(
+            self.campaign_flag(CAMPAIGN_FLAG_DEFEATED_BASE + duelist)
+            for duelist in duelists
+        )
+
+    def set_campaign_checkpoint(self, checkpoint: str, enabled: bool) -> None:
+        """Set or clear the story and duelist-unlock flags for a milestone."""
+        try:
+            definition = CAMPAIGN_CHECKPOINTS[checkpoint]
+        except KeyError as exc:
+            raise SaveDataError(f"Unknown campaign checkpoint: {checkpoint}.") from exc
+        for flag in definition["flags"]:
+            self.set_campaign_flag(flag, enabled)
+        for duelist in definition["duelists"]:
+            self.set_campaign_flag(CAMPAIGN_FLAG_DEFEATED_BASE + duelist, enabled)
+            self.set_campaign_flag(FREE_DUEL_UNLOCK_FLAG_BASE + duelist, enabled)
 
     def campaign_flag(self, flag: int) -> bool:
         if not 0 <= flag <= 0x7FF:

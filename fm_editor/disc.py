@@ -5,6 +5,7 @@ import re
 import struct
 import tempfile
 from core.cdrom import PS1DiscImage, encode_mode2_form1_sector, compute_edc, generate_ecc
+from .bps import BpsWriter
 
 
 class Disc(PS1DiscImage):
@@ -55,8 +56,10 @@ class Disc(PS1DiscImage):
                 out.extend(s[self.detected[1]:self.detected[1] + 2048])
         return bytes(out[:entry.size])
 
-    def export(self, target, replacements, progress=lambda p, s: None):
+    def export(self, target, replacements, progress=lambda p, s: None, *, patch=False):
         target = Path(target).resolve()
+        if patch and target.suffix.lower() != '.bps':
+            raise ValueError('Choose a .bps filename for the patch.')
         if target == self.path or (target.exists() and os.path.samefile(target, self.path)):
             raise ValueError('Choose a new output file. The source disc is never overwritten.')
         patches = {}
@@ -71,17 +74,20 @@ class Disc(PS1DiscImage):
         try:
             with os.fdopen(fd, 'wb') as out, self.path.open('rb') as source:
                 total = self.filesize // self.sector_size
+                writer = BpsWriter(out, self.filesize) if patch else None
                 for lba in range(total):
                     original = source.read(self.sector_size)
+                    if len(original) != self.sector_size:
+                        raise ValueError('The source disc was truncated during export.')
                     sector = bytearray(original)
-                    patch = patches.get(lba)
+                    data = patches.get(lba)
                     skip = self.detected[1]
-                    if patch is not None and sector[skip:skip + len(patch)] != patch:
+                    if data is not None and sector[skip:skip + len(data)] != data:
                         if self.sector_size in (2352, 2336) and skip != 16:
                             sub = 18 if self.sector_size == 2352 else 2
                             if sector[sub] & 0x20:
                                 raise ValueError(f'Patch overlaps XA Form 2 sector {lba}; export refused.')
-                        sector[skip:skip + len(patch)] = patch
+                        sector[skip:skip + len(data)] = data
                         changed += 1
                         if self.sector_size == 2352:
                             if skip == 24:
@@ -94,26 +100,33 @@ class Disc(PS1DiscImage):
                             raw = bytearray(16) + sector
                             encode_mode2_form1_sector(raw)
                             sector = raw[16:]
-                    out.write(sector)
+                    if writer:
+                        writer.sector(original, sector)
+                    else:
+                        out.write(sector)
                     if lba % 4096 == 0:
-                        progress(lba / total, f'Writing disc • {changed:,} modified sectors')
+                        output_type = 'BPS patch' if patch else 'disc'
+                        progress(lba / total, f'Writing {output_type} • {changed:,} modified sectors')
+                if writer:
+                    writer.finish()
                 out.flush()
                 os.fsync(out.fileno())
-            check = Disc(temp)
-            for key, data in replacements.items():
-                if check.extract_file(key) != data:
-                    raise ValueError(f'Export verification failed for {key}')
+            if not patch:
+                check = Disc(temp)
+                for key, data in replacements.items():
+                    if check.extract_file(key) != data:
+                        raise ValueError(f'Export verification failed for {key}')
             os.replace(temp, target)
         finally:
             if os.path.exists(temp):
                 os.unlink(temp)
         # Raw-sector images keep the original track layout and need a companion CUE.
         # A 2048-byte ISO can be opened directly and has no separate track metadata.
-        if self.sector_size in (2352, 2336):
+        if not patch and self.sector_size in (2352, 2336):
             if self.sector_size == 2336:
                 mode = 'MODE2/2336'
             else:
                 mode = 'MODE2/2352' if self.detected[1] == 24 else 'MODE1/2352'
             target.with_suffix('.cue').write_text(f'FILE "{target.name}" BINARY\n  TRACK 01 {mode}\n    INDEX 01 00:00:00\n', encoding='ascii')
-        progress(1, f'Export verified • {changed:,} modified sectors')
+        progress(1, f'Export finished • {changed:,} modified sectors')
         return changed

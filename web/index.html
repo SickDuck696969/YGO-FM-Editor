@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#141920" />
+    <title>Forbidden Memories Workshop</title>
+    <link rel="stylesheet" href="./studio.css" />
+    <link rel="icon" href="data:," />
+  </head>
+  <body>
+    <aside>
+      <a class="brand" href="#home" aria-label="Workshop home"
+        ><i class="mark"></i><span>FM <b>Workshop</b></span></a
+      >
+      <nav aria-label="Workbench"></nav>
+      <div class="sidefoot">
+        <label for="theme">Interface theme</label
+        ><select id="theme">
+          <option>Workshop graphite</option></select
+        ><a
+          href="https://github.com/SickDuck696969/YGO-FM-Editor"
+          target="_blank"
+          rel="noopener"
+          >Source repository ↗</a
+        >
+      </div>
+    </aside>
+    <main>
+      <header>
+        <span>Workbench <b>/</b> <strong id="crumb">Overview</strong></span
+        ><button id="openTop">Open disc</button>
+      </header>
+      <section id="view"></section>
+      <div id="notice" role="status" aria-live="polite"></div>
+    </main>
+    <dialog id="picker">
+      <div class="dialoghead">
+        <h2 id="pickTitle">Choose a card</h2>
+        <button id="closePick" aria-label="Close">×</button>
+      </div>
+      <div id="pickContent"></div>
+    </dialog>
+    <div id="busy" hidden>
+      <span class="spin"></span><span id="busyText">Opening editor…</span>
+    </div>
+    <input type="file" hidden multiple id="discFile" /><input
+      type="file"
+      hidden
+      id="saveFile"
+      accept=".mcd,.mcs"
+    /><input type="file" hidden id="imageFile" accept="image/*" />
+    <script src="./app.js" defer></script>
+    <script src="./recipes-drops.js" defer></script>
+    <script src="./saves-export.js" defer></script>
+  </body>
+</html>

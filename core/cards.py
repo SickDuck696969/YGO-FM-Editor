@@ -522,7 +522,16 @@ class CardDatabase:
 
         orig_tail_start = (SLUS_STRING_TABLE_BASE + self.raw_names_ptrs[768]) if len(self.raw_names_ptrs) > 768 else 0x1C92CE
         if orig_tail_start < 0x1C9800:
-            self.tail_names_data = exe_bytes[orig_tail_start : 0x1C96AC]
+            # Keep the final location label's text jump when names move.
+            last_location = SLUS_STRING_TABLE_BASE + self.raw_names_ptrs[863]
+            end = exe_bytes.find(b'\xfd\x80\x8e', last_location, SLUS_NAMES_MAX_OFFSET)
+            if orig_tail_start <= last_location <= end:
+                self.tail_names_data = exe_bytes[orig_tail_start:end + 3]
+            elif (orig_tail_start <= last_location < SLUS_NAMES_MAX_OFFSET - 10
+                  and exe_bytes[last_location:last_location + 10] == bytes.fromhex('23050c05061000000000')):
+                self.tail_names_data = exe_bytes[orig_tail_start:last_location + 7] + b'\xfd\x80\x8e'
+            else:
+                self.tail_names_data = exe_bytes[orig_tail_start:0x1C96AC]
             self.orig_card_names_len = orig_tail_start - SLUS_NAMES_OFFSET
         else:
             self.tail_names_data = b""

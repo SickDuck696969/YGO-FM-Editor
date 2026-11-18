@@ -2,10 +2,9 @@
 Engine Patches and Gameplay Modifiers for Yu-Gi-Oh! Forbidden Memories.
 
 DROP ENGINE PATCH NOTES:
-  - The standalone Vanilla Express reward engine is only safe for the supported
-    retail USA reward-hook layout with its required code caves free.
-  - Do not inject it into an arbitrary mod's custom duel-reward routine. That
-    can break the victory flow; the GUI checks signatures before installing it.
+  - The engine is installed only on a verified retail reward layout or on this
+    editor's exact previously installed payload. Unknown custom reward code is
+    never overwritten.
   - Configurable reward count: 1 to 100 cards on the supported layout.
     1. Base del motor de drops y variables (0x0021B0..0x002278).
     2. Despachador de memoria de Vanilla Express (0x1CBC30..0x1CBC98 -> 0x801db430).
@@ -14,8 +13,9 @@ DROP ENGINE PATCH NOTES:
     5. Disparador 1 (Post-duel roll, 0x012460..0x01248C):
        Llama al despachador y preserva el disparador de audio 0x0602 en 0x5708($v1)
        para que el driver de sonido del Dream Mod limpie el flag de fadeout y no se congele.
-    6. Disparador 2 (Victory chest & reward display, 0x012710..0x012724):
-       Llama al despachador para acreditar las cartas en el baúl y retorna limpiamente a 0x8002209c.
+    6. Disparador 2 (Victory chest & reward display, 0x012710..0x012774):
+       Acredita las cartas, actualiza el estado de victoria y salta las páginas
+       de recompensa adicionales para no desbordar la pantalla original.
     7. Multiplicador de drops configurable (0x0021C0: 1 a 100 cartas).
     8. Preservación del bono de 50 starchips del Dream Mod (0x0126DC).
     9. Preservación íntegra de los sistemas de diálogo (0x0155C8), GPU (0x002B30)
@@ -74,6 +74,65 @@ class EnginePatchManager:
         ),
     }
 
+    # The vanilla result screen has room for one Spoils card. The workshop
+    # engine awards the extra cards directly to the trunk, then takes the
+    # normal win path while skipping the one-card result UI. This cleanup also
+    # advances the campaign/free-duel result state and clears the active duel.
+    SAFE_VICTORY_EXIT_WORDS = (
+        0x9382025D, 0x278502D0, 0x00021080, 0x00452021,
+        0x8C830000, 0x00000000, 0x94620518, 0x00000000,
+        0x24420001, 0xA4620518, 0x3C01800A, 0x24020001,
+        0xA022B369, 0x24020003, 0xA022B269, 0x24020001,
+        0xA022B26C, 0x34027310, 0xA782008E, 0xA7800332,
+        0x08008827, 0x00000000,
+    )
+    SAFE_VICTORY_EXIT_START = 0x01271C
+    SAFE_VICTORY_EXIT_END = 0x0127B0
+
+    @classmethod
+    def _safe_victory_exit_bytes(cls) -> bytes:
+        code = b"".join(struct.pack("<I", word) for word in cls.SAFE_VICTORY_EXIT_WORDS)
+        return code + bytes(cls.SAFE_VICTORY_EXIT_END - cls.SAFE_VICTORY_EXIT_START - len(code))
+
+    @staticmethod
+    def _reward_hook1_bytes() -> bytes:
+        return struct.pack(
+            "<12I",
+            0x08076D0C, 0x00000000, 0x8F8402E0, 0x3C03801D,
+            0x3C01800A, 0xA422B338, 0xA482003C, 0x24050602,
+            0xAC655708, 0xAC6256A8, 0x9082003A, 0x00000000,
+        )
+
+    @classmethod
+    def is_workshop_reward_engine(cls, target_exe: bytes) -> bool:
+        """Recognize only this editor's complete payload, including its old hook."""
+        if len(target_exe) < 0x1CC7A4:
+            return False
+        for start, payload in cls.STANDALONE_DROP_ENGINE_PAYLOADS.items():
+            actual = target_exe[start:start + len(payload)]
+            expected = bytearray(payload)
+            if start == 0x0021B0:
+                # These bytes are the user-selected count and per-run state.
+                expected[0x10] = actual[0x10]
+                expected[0x20] = actual[0x20]
+                if not 1 <= actual[0x10] <= 100:
+                    return False
+            if actual != bytes(expected):
+                return False
+        if target_exe[0x012460:0x012490] != cls._reward_hook1_bytes():
+            return False
+        # The earlier workshop build used this exact dispatcher and a direct
+        # epilogue jump. Recognize it so export can upgrade the unsafe exit.
+        old_hook2 = struct.pack("<5I", 0x8444003C, 0x08076D0C, 0, 0x08008827, 0)
+        current_hook2 = struct.pack("<3I", 0x8444003C, 0x08076D0C, 0)
+        if target_exe[0x012710:0x012724] == old_hook2:
+            return True
+        return (
+            target_exe[0x012710:0x01271C] == current_hook2
+            and target_exe[cls.SAFE_VICTORY_EXIT_START:cls.SAFE_VICTORY_EXIT_END]
+            == cls._safe_victory_exit_bytes()
+        )
+
     @staticmethod
     def apply_drop_engine(
         target_exe: bytearray,
@@ -128,16 +187,18 @@ class EnginePatchManager:
 
         # 3. Configurar Disparador 2: Victory chest deposit & screen return (0x012710..0x012724)
         # Salta al despachador para acreditar las cartas al baúl y sale limpiamente a 0x8002209c
-        if len(target_exe) >= 0x012724:
+        if len(target_exe) >= EnginePatchManager.SAFE_VICTORY_EXIT_END:
             hook2 = struct.pack(
-                '<5I',
+                '<3I',
                 0x8444003C,  # 0x012710: lh $a0, 0x003C($v0)
                 0x08076D0C,  # 0x012714: j 0x801DB430 (Dispatcher)
                 0x00000000,  # 0x012718: nop
-                0x08008827,  # 0x01271C: j 0x8002209C (return limpio a epílogo de frame)
-                0x00000000,  # 0x012720: nop
             )
             target_exe[0x012710:0x012710 + len(hook2)] = hook2
+            exit_start = EnginePatchManager.SAFE_VICTORY_EXIT_START
+            target_exe[exit_start:EnginePatchManager.SAFE_VICTORY_EXIT_END] = (
+                EnginePatchManager._safe_victory_exit_bytes()
+            )
             patches_applied += 1
 
         # 4. Preservar bono de 50 starchips del Dream Mod en la pantalla de victoria
@@ -204,8 +265,13 @@ class EnginePatchManager:
         results["victory_hook_ok"] = (v_hook == 0x08076D0C)
 
         # 4. Salida de victoria correcta a epílogo (j 0x8002209c)
-        v_ret = struct.unpack_from('<I', target_exe, 0x01271C)[0]
+        v_ret = struct.unpack_from('<I', target_exe, 0x01276C)[0]
         results["victory_return_ok"] = (v_ret == 0x08008827)
+        results["victory_cleanup_ok"] = (
+            len(target_exe) >= EnginePatchManager.SAFE_VICTORY_EXIT_END
+            and target_exe[EnginePatchManager.SAFE_VICTORY_EXIT_START:EnginePatchManager.SAFE_VICTORY_EXIT_END]
+            == EnginePatchManager._safe_victory_exit_bytes()
+        )
 
         # 5. Despachador de Vanilla Express presente
         d_inst = struct.unpack_from('<I', target_exe, 0x1CBC30)[0]
