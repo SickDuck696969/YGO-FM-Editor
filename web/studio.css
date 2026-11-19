@@ -783,3 +783,17 @@ dialog.fusion-picker {
   margin-right: auto;
   color: var(--muted);
 }
+
+.fusion-grid.list {
+  overflow-y: scroll;
+  scrollbar-gutter: stable;
+}
+.fusion-grid [hidden] {
+  display: none;
+}
+.picker-view {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 8px;
+}

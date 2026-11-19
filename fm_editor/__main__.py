@@ -383,17 +383,27 @@ class App(tk.Tk):
   tools=ttk.Frame(win,padding=10);tools.grid(row=0,column=0,sticky='ew');tools.columnconfigure(0,weight=1);query=tk.StringVar();sort=tk.StringVar(value='Name')
   search=ttk.Entry(tools,textvariable=query);search.grid(row=0,column=0,sticky='ew',padx=(0,6));picker_filter=self.filter_button(tools,lambda:refresh());picker_filter.grid(row=0,column=1,padx=4);ttk.Combobox(tools,textvariable=sort,values=['Name','Card ID','ATK','DEF','Level'],state='readonly',width=11).grid(row=0,column=2,padx=4)
   body=ttk.Frame(win,padding=(10,0,10,8));body.grid(row=1,column=0,sticky='nsew')
-  for column in range(6):body.columnconfigure(column,weight=1,uniform="cards")
-  for row in range(2):body.rowconfigure(row,weight=1)
-  footer=ttk.Frame(win,padding=10);footer.grid(row=2,column=0,sticky='ew');page={'value':0};images=[]
-  count=ttk.Label(footer);count.pack(side='left');previous=ttk.Button(footer,text='← Previous');previous.pack(side='right',padx=4);next_page=ttk.Button(footer,text='Next →');next_page.pack(side='right',padx=4)
+  body.columnconfigure(0,weight=1);body.rowconfigure(0,weight=1)
+  canvas=tk.Canvas(body,highlightthickness=0,yscrollincrement=30)
+  canvas.grid(row=0,column=0,sticky='nsew')
+  scroll=ttk.Scrollbar(body,orient='vertical',command=canvas.yview)
+  scroll.grid(row=0,column=1,sticky='ns')
+  footer=ttk.Frame(win,padding=10);footer.grid(row=2,column=0,sticky='ew')
+  count=ttk.Label(footer);count.pack(side='left')
   multiple=index<2
-  working=set(self.material_choices[index]) if multiple else set()
+  result_id=self.card_from_option(self.fv[index].get())
+  working=set(self.material_choices[index]) if multiple else {result_id}
+  selected_only=tk.BooleanVar(win,value=False)
+  ttk.Checkbutton(tools,text='Show selected only',variable=selected_only,command=lambda:refresh()).grid(row=0,column=3)
   filtered_ids=set()
+  entries=[]
+  tiles={}
+  render_job=None
+  columns,row_height=6,180
   def bulk(select):
    if select:working.update(filtered_ids)
    else:working.difference_update(filtered_ids)
-   refresh()
+   refresh(keep_position=True)
   def apply_selection():
    if not working:return
    self.material_choices[index]=working.copy()
@@ -408,36 +418,65 @@ class App(tk.Tk):
   def set_card(cid):
    if multiple:
     working.symmetric_difference_update((cid,))
-    refresh()
+    refresh(keep_position=True)
    else:
     self.assign_fusion_card(index,cid);win.destroy()
-  def refresh(*_):
-   for child in body.winfo_children():child.destroy()
-   images.clear();entries=list(self.cards.cards.items());needle=query.get().strip().lower()
-   entries=[(cid,c) for cid,c in entries if picker_filter.criteria.matches(c)]
-   if needle:entries=[(cid,c) for cid,c in entries if needle in c.name.lower() or needle in str(cid)]
+  def refresh(*_,keep_position=False):
+   nonlocal entries
+   needle=query.get().strip().lower()
+   entries=[(cid,c) for cid,c in self.cards.cards.items()
+            if (not selected_only.get() or cid in working) and picker_filter.criteria.matches(c)
+            and (not needle or needle in c.name.lower() or needle in str(cid))]
    filtered_ids.clear();filtered_ids.update(cid for cid,_ in entries)
-   if sort.get()=='Card ID':entries.sort(key=lambda x:x[0])
-   elif sort.get()=='ATK':entries.sort(key=lambda x:(x[1].atk,x[1].name.lower()))
-   elif sort.get()=='DEF':entries.sort(key=lambda x:(x[1].def_,x[1].name.lower()))
-   elif sort.get()=='Level':entries.sort(key=lambda x:(getattr(x[1],'level',0),x[1].name.lower()))
-   else:entries.sort(key=lambda x:x[1].name.lower())
-   pages=max(1,(len(entries)+11)//12);page['value']=max(0,min(page['value'],pages-1));visible=entries[page['value']*12:(page['value']+1)*12];count.configure(text=f'{page["value"]+1} / {pages} pages  ·  {len(entries):,} cards')
-   if multiple:
-    count.configure(text=f"{len(working)} selected · {len(entries)} matching · Page {page['value']+1} / {pages}");apply_button.configure(state='normal' if working else 'disabled')
-   previous.configure(state='normal' if page['value'] else 'disabled');next_page.configure(state='normal' if page['value']+1<pages else 'disabled')
-   for slot,(cid,card) in enumerate(visible):
-    chosen=cid in working if multiple else cid==self.card_from_option(self.fv[index].get())
-    art=self.art.get_card_art(cid)
-    photo=None
-    if art:
-     photo=ImageTk.PhotoImage(self.render_card_preview(card,art).resize((100,138),Image.Resampling.LANCZOS));images.append(photo)
-    label=('✓ Selected' if chosen else 'Select') if photo else card.name
-    tile=tk.Button(body,text=label,compound='top',command=lambda n=cid:set_card(n),relief='sunken' if chosen else 'flat',borderwidth=2,background='#b8e893' if chosen else '#30363c',foreground='#102018' if chosen else '#e2e5e9',takefocus=True)
-    if photo:tile.configure(image=photo)
-    tile.grid(row=slot//6,column=slot%6,sticky='nsew',padx=2,pady=2)
-    tile.bind('<Button-3>',lambda e,n=cid:picker_context(e,n))
-   win._picker_images=images[:]
+   sort_key={'Card ID':lambda pair:pair[0], 'ATK':lambda pair:(pair[1].atk,pair[1].name.lower()),
+             'DEF':lambda pair:(pair[1].def_,pair[1].name.lower()),'Level':lambda pair:(pair[1].level,pair[1].name.lower())}
+   entries.sort(key=sort_key.get(sort.get(),lambda pair:pair[1].name.lower()))
+   canvas.configure(scrollregion=(0,0,1,((len(entries)+columns-1)//columns)*row_height))
+   if not keep_position:canvas.yview_moveto(0)
+   count.configure(text=f'{len(working)} selected · {len(entries)} matching')
+   if multiple:apply_button.configure(state='normal' if working else 'disabled')
+   schedule_render()
+  def wheel(event):
+   amount=-1 if getattr(event,'num',None)==4 else 1 if getattr(event,'num',None)==5 else (-1 if event.delta>0 else 1)*max(1,abs(event.delta)//120)
+   canvas.yview_scroll(amount,'units')
+   return 'break'
+  def bind_wheel(widget):
+   for sequence in ('<MouseWheel>','<Button-4>','<Button-5>'):widget.bind(sequence,wheel)
+  def draw_tiles():
+   nonlocal render_job
+   render_job=None
+   top=max(0,int(canvas.canvasy(0)))
+   first=top//row_height*columns
+   end=((top+canvas.winfo_height())//row_height+2)*columns
+   visible=entries[first:end]
+   visible_ids={cid for cid,_ in visible}
+   for cid in tiles.keys()-visible_ids:
+    item,tile=tiles.pop(cid);canvas.delete(item);tile.destroy()
+   width=max(1,canvas.winfo_width()//columns)
+   for position,(cid,card) in enumerate(visible,first):
+    if cid not in tiles:
+     tile=tk.Button(canvas,compound='top',command=lambda n=cid:set_card(n),borderwidth=2,takefocus=True)
+     art=self.art.get_card_art(cid)
+     if art:
+      tile.photo=ImageTk.PhotoImage(self.render_card_preview(card,art).resize((100,138),Image.Resampling.LANCZOS))
+      tile.configure(image=tile.photo)
+     bind_wheel(tile);tile.bind('<Button-3>',lambda e,n=cid:picker_context(e,n))
+     tiles[cid]=(canvas.create_window(0,0,window=tile,anchor='nw'),tile)
+    item,tile=tiles[cid];chosen=cid in working
+    label=('✓ Selected' if chosen else 'Select') if hasattr(tile,'photo') else card.name
+    tile.configure(text=label,relief='sunken' if chosen else 'flat',background='#b8e893' if chosen else '#30363c',foreground='#102018' if chosen else '#e2e5e9')
+    canvas.coords(item,(position%columns)*width+2,(position//columns)*row_height+2)
+    canvas.itemconfigure(item,width=max(1,width-4),height=row_height-4)
+  def schedule_render(*_):
+   nonlocal render_job
+   if render_job is None:render_job=canvas.after_idle(draw_tiles)
+  def scrolled(first,last):
+   if scroll.get()!=(float(first),float(last)):
+    scroll.set(first,last);schedule_render()
+  canvas.configure(yscrollcommand=scrolled);canvas.bind('<Configure>',schedule_render);bind_wheel(canvas)
+  def cancel_render(event):
+   if render_job is not None:canvas.after_cancel(render_job)
+  canvas.bind('<Destroy>',cancel_render)
   def picker_context(event,cid):
    menu=tk.Menu(win,tearoff=False)
    if multiple:
@@ -447,7 +486,7 @@ class App(tk.Tk):
   def set_card_for_slot(slot,cid):
    self.assign_fusion_card(slot,cid)
    if slot==index:win.destroy()
-  query.trace_add('write',refresh);sort.trace_add('write',refresh);previous.configure(command=lambda:(page.update(value=page['value']-1),refresh()));next_page.configure(command=lambda:(page.update(value=page['value']+1),refresh()));search.bind('<Return>',refresh);refresh()
+  query.trace_add('write',refresh);sort.trace_add('write',refresh);search.bind('<Return>',refresh);refresh()
  def select_fusion(self,_=None):
   if self.ft.selected is None:return
   a,b,r=self.ft.rows[self.ft.selected]

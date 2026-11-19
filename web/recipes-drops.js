@@ -6,16 +6,30 @@ function pickFusionSlot(index) {
   const draft = new Set(material ? ruleIds(index) : [slots[index]]);
   const dialog = $("#picker"),
     pendingArt = new Set();
-  let matches = [];
+  let filtered = [],
+    matches = [],
+    observer;
   $("#pickTitle").textContent = material
     ? `Choose Material ${index === 0 ? "A" : "B"}`
     : "Choose fusion result";
   dialog.classList.add("fusion-picker");
   $("#pickContent").innerHTML =
-    `<div id="fusionLibrary"></div><footer class="fusion-footer">${material ? '<button id="selectMatches">Select all matches</button><button id="deselectMatches">Deselect all matches</button>' : ""}<span id="chosenCount" role="status"></span>${material ? '<button id="useChosen" class="primary">Use selected cards</button>' : ""}</footer>`;
+    `<label class="picker-view"><input type="checkbox" id="selectedOnly"> Show selected only</label><div id="fusionLibrary"></div><footer class="fusion-footer">${material ? '<button id="selectMatches">Select all matches</button><button id="deselectMatches">Deselect all matches</button>' : ""}<span id="chosenCount" role="status"></span>${material ? '<button id="useChosen" class="primary">Use selected cards</button>' : ""}</footer>`;
   function update() {
-    for (const card of dialog.querySelectorAll("button[data-id]"))
-      card.setAttribute("aria-pressed", String(draft.has(+card.dataset.id)));
+    const selectedOnly = $("#selectedOnly").checked;
+    matches = selectedOnly ? filtered.filter((id) => draft.has(id)) : filtered;
+    for (const card of dialog.querySelectorAll(".fusion-tile")) {
+      const selected = draft.has(+card.dataset.id);
+      card.setAttribute("aria-pressed", String(selected));
+      card.hidden = selectedOnly && !selected;
+    }
+    const empty = dialog.querySelector(".fusion-grid .empty");
+    if (empty) {
+      empty.hidden = matches.length > 0;
+      empty.textContent = selectedOnly
+        ? "No selected cards match this view."
+        : "No matching cards.";
+    }
     $("#chosenCount").textContent = material
       ? `${draft.size} selected · ${matches.length} matching`
       : `${matches.length} matching`;
@@ -33,14 +47,51 @@ function pickFusionSlot(index) {
     return `<button data-id="${id}" class="fusion-tile" aria-pressed="${draft.has(id)}" style="--frame:${color}"><strong>${esc(c.name)}</strong><span class="face-art" style="background-position:${((pos % 16) * 100) / 15}% ${(Math.floor(pos / 16) * 100) / 45}%"></span><span class="face-info">★ ${c.level} · ${esc(meta.types[c.type_id])}<br>${esc(meta.attributes[c.attribute])} · ${esc(meta.stars[c.gs1])} / ${esc(meta.stars[c.gs2])}<br>ATK ${c.atk} · DEF ${c.def_}</span></button>`;
   }
   const cache = artCache;
-  function paint() {
-    for (const button of dialog.querySelectorAll(".fusion-tile")) {
-      const src = cache[button.dataset.id];
-      if (src)
-        button.querySelector(".face-art").style.background =
-          `center / cover url("${src}")`;
-    }
+  function paint(button) {
+    const src = cache[button.dataset.id];
+    if (src)
+      button.querySelector(".face-art").style.background =
+        `center / cover url("${src}")`;
   }
+  function observeArtwork(grid) {
+    observer?.disconnect();
+    observer = new IntersectionObserver(
+      (entries) => {
+        const visible = entries
+          .filter(
+            (entry) => entry.isIntersecting && grid.contains(entry.target),
+          )
+          .map((entry) => entry.target);
+        const ids = visible
+          .map((button) => +button.dataset.id)
+          .filter((id) => !cache[id] && !pendingArt.has(id));
+        visible.forEach(paint);
+        if (!ids.length) return;
+        ids.forEach((id) => pendingArt.add(id));
+        rpc("pickerArt", { ids })
+          .then((images) => {
+            Object.assign(cache, images);
+            if (dialog.open)
+              for (const id of ids) {
+                const button = dialog.querySelector(
+                  `.fusion-tile[data-id="${id}"]`,
+                );
+                if (button) paint(button);
+              }
+          })
+          .catch(fail)
+          .finally(() => ids.forEach((id) => pendingArt.delete(id)));
+      },
+      { root: grid, rootMargin: "120px" },
+    );
+    grid
+      .querySelectorAll(".fusion-tile")
+      .forEach((button) => observer.observe(button));
+  }
+  $("#selectedOnly").onchange = () => {
+    update();
+    dialog.querySelector(".fusion-grid").scrollTop = 0;
+  };
   delete browsers.fusionPicker;
   library(
     $("#fusionLibrary"),
@@ -58,22 +109,15 @@ function pickFusionSlot(index) {
     {
       tile,
       onMatches(all, results) {
-        matches = all;
+        filtered = all;
+        const grid = results.querySelector(".fusion-grid");
+        if (!grid.querySelector(".empty"))
+          grid.insertAdjacentHTML(
+            "beforeend",
+            '<div class="empty" hidden></div>',
+          );
         update();
-        paint();
-        const ids = [...results.querySelectorAll(".fusion-tile")]
-          .map((b) => +b.dataset.id)
-          .filter((id) => !cache[id] && !pendingArt.has(id));
-        if (ids.length) {
-          ids.forEach((id) => pendingArt.add(id));
-          rpc("pickerArt", { ids })
-            .then((images) => {
-              Object.assign(cache, images);
-              if (dialog.open && dialog.contains(results)) paint();
-            })
-            .catch(fail)
-            .finally(() => ids.forEach((id) => pendingArt.delete(id)));
-        }
+        observeArtwork(grid);
       },
     },
   );
@@ -95,6 +139,7 @@ function pickFusionSlot(index) {
   dialog.addEventListener(
     "close",
     () => {
+      observer?.disconnect();
       dialog.classList.remove("fusion-picker");
       if (page === "fusion") render();
     },

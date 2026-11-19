@@ -293,8 +293,7 @@ function library(root, key, choose, options = {}) {
     );
     const results = root.querySelector(".results");
     results.innerHTML = `<div class="list ${tile ? "fusion-grid" : ""}">${
-      match
-        .slice(state.page * n, (state.page + 1) * n)
+      (tile ? match : match.slice(state.page * n, (state.page + 1) * n))
         .map((id) =>
           tile
             ? tile(id)
@@ -306,16 +305,18 @@ function library(root, key, choose, options = {}) {
               ),
         )
         .join("") || '<div class="empty">No matching cards.</div>'
-    }</div>${paginate(match.length, state.page, n)}`;
+    }</div>${tile ? "" : paginate(match.length, state.page, n)}`;
     onMatches?.(match, results);
-    results.querySelector("[data-prev]").onclick = () => {
-      state.page--;
-      draw();
-    };
-    results.querySelector("[data-next]").onclick = () => {
-      state.page++;
-      draw();
-    };
+    if (!tile) {
+      results.querySelector("[data-prev]").onclick = () => {
+        state.page--;
+        draw();
+      };
+      results.querySelector("[data-next]").onclick = () => {
+        state.page++;
+        draw();
+      };
+    }
     results.querySelector(".list").onclick = (e) => {
       const b = e.target.closest("[data-id]");
       if (b) Promise.resolve(choose(+b.dataset.id)).catch(fail);
@@ -388,6 +389,7 @@ function home() {
       )}</div><p class="info sectionhead">Disc images and saves stay in this browser. Download your work before closing the tab.</p>`;
   on("heroOpen", () => (game ? go("cards") : $("#discFile").click()));
 }
+let atlasUrl;
 async function openDisc(files) {
   if (!files.length) return;
   if (
@@ -401,10 +403,10 @@ async function openDisc(files) {
     game = next;
     discName =
       files.find((f) => !/\.(cue|ccd)$/i.test(f.name))?.name || files[0].name;
-    document.documentElement.style.setProperty(
-      "--atlas",
-      `url("${game.atlas}")`,
-    );
+    const imageUrl = URL.createObjectURL(await (await fetch(game.atlas)).blob());
+    document.documentElement.style.setProperty("--atlas", `url("${imageUrl}")`);
+    if (atlasUrl) URL.revokeObjectURL(atlasUrl);
+    atlasUrl = imageUrl;
     delete game.atlas;
     active = 1;
     slots = [1, 2, 3];
