@@ -232,7 +232,7 @@ class App(tk.Tk):
    if not 0<=c.type_id<=23:raise ValueError('Type ID must be 0–23.')
    if not 0<=c.gs1<=10 or not 0<=c.gs2<=10:raise ValueError('Guardian star IDs must be 0–10.')
    if not 0<=c.star_cost<=999999:raise ValueError('Starchip cost must be 0–999999.')
-   if len(c.name)>36:raise ValueError('Card names must be 36 characters or fewer.')
+   if not c.name.strip() or len(c.name)>64:raise ValueError('Card names must contain 1–64 characters.')
    if len(c.password)!=8 or any(ch not in string.hexdigits for ch in c.password):raise ValueError('Password must contain exactly eight hexadecimal digits (0–9, A–F).')
    if not 0<=c.level<=12 or not 0<=c.attribute<len(ATTRIBUTES):raise ValueError('Monster level must be 0–12 and attribute must be a listed game attribute.')
    c.description=self.desc.get('1.0','end-1c');self.cards.cards[self.current]=c;self.mini_photos.pop(self.current,None);self.dirty=True;self.fill();self.fill_starter_cards();self.set_card_picker_values();self.load_fusions();self.refresh_deck_view();self.load_drops()

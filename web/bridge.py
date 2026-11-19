@@ -187,8 +187,8 @@ def handle(op, args, progress=lambda p, text: None):
         c = copy.copy(game.cards.cards[data["id"]])
         for key in FIELDS:
             setattr(c, key, data[key])
-        if not c.name.strip() or len(c.name) > 36 or not re.fullmatch("[0-9a-fA-F]{8}", c.password):
-            raise ValueError("Enter a name (1–36 characters) and an eight-digit hexadecimal password.")
+        if not c.name.strip() or len(c.name) > 64 or not re.fullmatch("[0-9a-fA-F]{8}", c.password):
+            raise ValueError("Enter a name (1–64 characters) and an eight-digit hexadecimal password.")
         for key, high in (("type_id", 23), ("attribute", 7), ("level", 12), ("gs1", 10),
                           ("gs2", 10), ("star_cost", 999999), ("atk", 5110), ("def_", 5110)):
             if type(getattr(c, key)) is not int or not 0 <= getattr(c, key) <= high:

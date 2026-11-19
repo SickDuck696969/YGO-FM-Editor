@@ -247,7 +247,8 @@ class CardGraphicsDatabase:
         else:
             draw.text(position, name, font=font, fill=0)
         if text_width > room:
-            strip = strip.resize((384, 56), Image.Resampling.LANCZOS)
+            fitted_width = max(1, round(text_width + margin * 2) * room // text_width)
+            strip = strip.resize((fitted_width, 56), Image.Resampling.LANCZOS)
         strip = strip.crop((0, 0, 384, 56)).resize((TITLE_WIDTH, TITLE_HEIGHT), Image.Resampling.LANCZOS)
         pixels = strip.tobytes()
         plate = bytearray(TITLE_BYTES)
