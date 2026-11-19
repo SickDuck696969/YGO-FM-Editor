@@ -169,6 +169,8 @@ def handle(op, args, progress=lambda p, text: None):
     if op == "newSave":
         Path("export.save").write_bytes(create_card(game.exe, args["deck"], args["player"], args["chips"]))
         return
+    if op == "pickerArt":
+        return {i: png(game.art.get_card_art(i)) for i in args["ids"]}
     if op == "art":
         return png(game.art.get_card_art(args["id"]))
     if op in ("artEdit", "portraitEdit"):

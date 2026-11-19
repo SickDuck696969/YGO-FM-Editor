@@ -698,11 +698,88 @@ dialog::backdrop {
   }
 }
 
-#materialLibrary .row[aria-pressed]::after {
-  content: "+";
-  margin-left: auto;
+dialog.fusion-picker {
+  width: min(1070px, 96vw);
+  max-height: 94dvh;
+  overflow: auto;
 }
-#materialLibrary .row[aria-pressed="true"]::after {
+.fusion-picker .filtergrid {
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+}
+.fusion-grid.list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(105px, 100%), 1fr));
+  align-items: start;
+  gap: 5px;
+  max-height: 49dvh;
+  padding: 5px;
+}
+.fusion-tile {
+  position: relative;
+  display: grid;
+  grid-template-rows: 2.5em auto 4.6em;
+  gap: 3px;
+  width: 100%;
+  font:
+    12px/1.2 Georgia,
+    serif;
+  text-align: left;
+  color: #231c18;
+  border: 3px double #46392b;
+  background: var(--frame);
+  border-radius: 4px;
+  padding: 4px;
+}
+.fusion-tile strong,
+.face-info {
+  display: block;
+  background: #f2e7cd;
+  padding: 2px 4px;
+  overflow: hidden;
+  overflow-wrap: anywhere;
+}
+.face-art {
+  display: block;
+  aspect-ratio: 102/96;
+  background-image: var(--atlas);
+  background-size: 1600% 4600%;
+}
+.face-info {
+  font:
+    600 10px/1.25 "Segoe UI",
+    sans-serif;
+}
+.fusion-tile[aria-pressed="true"] {
+  outline: 3px solid var(--accent);
+  outline-offset: 0;
+  border-color: var(--ink);
+}
+.fusion-tile[aria-pressed="true"]::after {
   content: "✓";
-  color: var(--accent);
+  position: absolute;
+  right: 4px;
+  top: 2.9em;
+  border-radius: 50%;
+  width: 22px;
+  height: 22px;
+  background: var(--accent);
+  color: var(--ink);
+  border: 1px solid var(--ink);
+  font: bold 16px/22px sans-serif;
+  text-align: center;
+}
+.fusion-footer {
+  position: sticky;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  background: var(--panel);
+  padding: 10px 0 0;
+  border-top: 1px solid var(--line);
+}
+#chosenCount {
+  margin-right: auto;
+  color: var(--muted);
 }

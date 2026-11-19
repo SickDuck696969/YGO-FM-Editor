@@ -234,10 +234,8 @@ class App(tk.Tk):
   page.rowconfigure(3, weight=1)
   self.fv = [tk.StringVar() for _ in range(3)]
   self.undo_recipe_state = None
-  self.fusion_picks, self.material_filter_controls, self.material_filters = [], [], []
+  self.fusion_picks = []
   self.fusion_photos = {}
-  self.material_modes = [tk.StringVar(value='Specific card') for _ in range(2)]
-  self.material_exceptions = [set(), set()]
   self.material_choices = [set(), set()]
   slots = ttk.Frame(page)
   slots.grid(row=0, column=0, sticky='ew')
@@ -251,19 +249,8 @@ class App(tk.Tk):
    panel.pack(side='left', fill='x', expand=True)
    pick = ttk.Button(panel, text='Choose card…', command=lambda n=i:self.open_card_picker(n))
    pick.pack(fill='x')
-   preview.bind('<Button-1>', lambda e,n=i:self.material_filters[n].open() if n<2 and self.material_modes[n].get()=='Match card filters' else self.open_card_picker(n))
+   preview.bind('<Button-1>', lambda e,n=i:self.open_card_picker(n))
    self.fusion_picks.append((pick, preview))
-   if i < 2:
-    mode = ttk.Combobox(panel, textvariable=self.material_modes[i], values=('Specific card','Multiple cards','Match card filters'), state='readonly', width=15)
-    mode.pack(fill='x', pady=3)
-    mode.bind('<<ComboboxSelected>>', lambda e,n=i:self.update_material_mode(n))
-    controls = ttk.Frame(panel)
-    filters = self.filter_button(controls, lambda n=i:self.update_material_filters(n), 'Material filters')
-    filters.pack(fill='x')
-    self.material_filters.append(filters)
-    exceptions = ttk.Button(controls, command=lambda n=i:self.edit_material_exceptions(n))
-    exceptions.pack(fill='x')
-    self.material_filter_controls.append((controls, exceptions))
   edit = ttk.Frame(page)
   edit.grid(row=1, column=0, sticky='ew', pady=6)
   ttk.Button(edit, text='Apply recipe', command=self.fusion_add).pack(side='left')
@@ -308,7 +295,6 @@ class App(tk.Tk):
   self.recipe_prev.pack(side='right', padx=4)
   self.fusion_query.trace_add('write', lambda *_:self.load_fusions())
   self.fusion_sort.trace_add('write', lambda *_:self.load_fusions())
-  for i in range(2):self.update_material_mode(i)
   self.load_fusions()
  def reset_recipe_search(self):
   self.fusion_scope.set('Everywhere')
@@ -352,66 +338,10 @@ class App(tk.Tk):
     cid=selected[i] if i<len(selected) and selected[i] in self.card_option_by_id else available_ids[min(i,len(available_ids)-1)]
     self.fv[i].set(self.card_option_by_id[cid])
     pick.configure(text=self.card_button_text(cid))
-    if i<2 and self.material_modes[i].get()=='Match card filters':self.update_material_filters(i)
-    else:self.preview_fusion_card(i)
+    self.preview_fusion_card(i)
   self.update_fusion_summary()
- def update_material_mode(self,index):
-  combo,preview=self.fusion_picks[index];controls,exclude=self.material_filter_controls[index]
-  if self.material_modes[index].get()=='Match card filters':
-   combo.pack_forget();controls.pack(fill='x',pady=(3,0));self.update_material_filters(index)
-  else:
-   controls.pack_forget();combo.pack(fill='x',pady=(6,0));self.preview_fusion_card(index)
-  self.update_fusion_summary()
- def material_filter_label(self,index):
-  labels = self.material_filters[index].criteria.labels()
-  label = ' · '.join(part if len(part) <= 30 else part.split(':')[0] + ' (' + str(part.count(',')+1) + ')' for part in labels) if labels else 'All cards'
-  excluded=len(self.material_exceptions[index])
-  return label+(f'\n{excluded} excluded' if excluded else '')
- def update_material_filters(self,index):
-  if self.material_modes[index].get()!='Match card filters':return self.update_fusion_summary()
-  controls,button=self.material_filter_controls[index];button.configure(text=f'Exceptions ({len(self.material_exceptions[index])})…');preview=self.fusion_picks[index][1];preview.configure(image='',text=self.material_filter_label(index),font=('Segoe UI',11,'bold'))
-  self.update_fusion_summary()
- def edit_material_exceptions(self,index):
-  if not self.cards.cards:return messagebox.showinfo('Fusion exceptions','Open a ROM image before choosing excluded cards.')
-  if self.material_modes[index].get()!='Match card filters':return messagebox.showinfo('Fusion exceptions','Switch this material to “Match card filters” first.')
-  win=tk.Toplevel(self);win.title(f'Material {index+1} · matching cards and exceptions');win.geometry('850x700');win.minsize(700,520);win.transient(self);win.grab_set();win.columnconfigure(0,weight=1);win.rowconfigure(1,weight=1)
-  working=set(self.material_exceptions[index]);query=tk.StringVar();show_excluded=tk.BooleanVar(value=False);tools=ttk.Frame(win,padding=12);tools.grid(row=0,column=0,sticky='ew');tools.columnconfigure(0,weight=1)
-  ttk.Label(tools,text=f'MATERIAL {index+1}  ·  {self.material_filter_label(index).replace(chr(10)," · ")}',font=('Segoe UI',12,'bold')).grid(row=0,column=0,sticky='w',pady=(0,8));search=ttk.Entry(tools,textvariable=query);search.grid(row=1,column=0,sticky='ew');ttk.Checkbutton(tools,text='Show excluded cards',variable=show_excluded,command=lambda:refresh()).grid(row=1,column=1,sticky='e',padx=(10,0));ttk.Label(tools,text='Only cards matching this material filter are listed. Double-click to exclude or restore.',font=('Segoe UI',9)).grid(row=2,column=0,columnspan=2,sticky='w',pady=(6,0))
-  body=ttk.Frame(win,padding=(12,0,12,8));body.grid(row=1,column=0,sticky='nsew');body.columnconfigure(0,weight=1);body.rowconfigure(0,weight=1);tree=ttk.Treeview(body,columns=('state','id','stats'),show='tree headings');tree.heading('#0',text='MATCHING CARD · GAME ICONS');tree.heading('state',text='Material');tree.heading('id',text='Card ID');tree.heading('stats',text='ATK / DEF');tree.column('#0',width=440);tree.column('state',width=115,anchor='center');tree.column('id',width=70,anchor='center');tree.column('stats',width=115,anchor='center');tree.grid(row=0,column=0,sticky='nsew');scroll=ttk.Scrollbar(body,orient='vertical',command=tree.yview);scroll.grid(row=0,column=1,sticky='ns');tree.configure(yscrollcommand=scroll.set)
-  footer=ttk.Frame(win,padding=12);footer.grid(row=2,column=0,sticky='ew');count=ttk.Label(footer,text='');count.pack(side='left')
-  def refresh(*_):
-   tree.delete(*tree.get_children());needle=query.get().strip().lower();eligible=excluded=0
-   for cid,c in sorted(self.cards.cards.items()):
-    if not self.material_filter_matches(index,c):continue
-    if needle and needle not in c.name.lower() and needle not in str(cid):continue
-    is_excluded=cid in working
-    if is_excluded:excluded+=1
-    else:eligible+=1
-    if is_excluded and not show_excluded.get():continue
-    tree.insert('','end',iid=str(cid),text=c.name,image=self.mini_photo(cid),values=('Excluded' if is_excluded else 'Eligible',cid,f'{c.atk} / {c.def_}'))
-   count.configure(text=f'{eligible:,} eligible · {excluded:,} excluded · {eligible+excluded:,} match this material')
-  def toggle(_=None):
-   selection=tree.selection()
-   if not selection:return
-   for row in selection:
-    cid=int(row)
-    if cid in working:working.remove(cid)
-    else:working.add(cid)
-   refresh()
-   for row in selection:
-    if tree.exists(row):tree.selection_add(row)
-  def clear_exceptions():working.clear();refresh()
-  def apply():self.material_exceptions[index]=working;self.update_material_filters(index);win.destroy()
-  tree.bind('<Double-1>',toggle);query.trace_add('write',refresh);refresh();ttk.Button(footer,text='Toggle selected',command=toggle).pack(side='left',padx=(12,4));ttk.Button(footer,text='Clear exceptions',command=clear_exceptions).pack(side='left',padx=4);ttk.Button(footer,text='Cancel',command=win.destroy).pack(side='right',padx=4);ttk.Button(footer,text='Apply exceptions',command=apply).pack(side='right',padx=4)
- def material_filter_matches(self,index,card):
-  return self.material_filters[index].criteria.matches(card)
  def material_card_ids(self,index):
-  if self.material_modes[index].get()=='Multiple cards':return sorted(self.material_choices[index])
-  if self.material_modes[index].get()=='Match card filters':
-   excluded=self.material_exceptions[index]
-   return [cid for cid,c in self.cards.cards.items() if cid not in excluded and self.material_filter_matches(index,c)]
-  cid=self.card_from_option(self.fv[index].get())
-  return [cid] if cid is not None else []
+  return sorted(self.material_choices[index])
  def expanded_material_pairs(self):
   from itertools import product
   return {(min(a,b),max(a,b)) for a,b in product(self.material_card_ids(0),self.material_card_ids(1))}
@@ -423,7 +353,7 @@ class App(tk.Tk):
   self.fusion_summary.configure(text=f'{pair_count:,} pairs · {pair_count-existing:,} new · {existing:,} to {action}')
  def preview_fusion_card(self,index):
   cid=self.card_from_option(self.fv[index].get())
-  if index<2 and self.material_modes[index].get()=='Multiple cards':
+  if index<2:
    choices=self.material_choices[index]
    if not choices and cid:choices.add(cid)
    cid=min(choices) if choices else None
@@ -443,32 +373,38 @@ class App(tk.Tk):
   if cid not in self.cards.cards:return
   self.fv[index].set(self.card_option_for_id(cid));self.fusion_picks[index][0].configure(text=self.card_button_text(cid))
   if index<2:
-   self.material_modes[index].set('Specific card');self.update_material_mode(index)
+   self.material_choices[index]={cid};self.preview_fusion_card(index)
   else:self.preview_fusion_card(index)
   self.update_fusion_summary()
  def open_card_picker(self,index):
   if not self.cards.cards:return messagebox.showinfo('Card picker','Open a ROM image first.')
-  win=tk.Toplevel(self);win.title(('Choose material 1','Choose material 2','Choose fusion result')[index]);win.geometry('920x700');win.minsize(760,560);win.transient(self)
+  win=tk.Toplevel(self);win.title(('Choose material 1','Choose material 2','Choose fusion result')[index]);win.geometry('920x700');win.minsize(760,560);win.transient(self);win.grab_set()
   win.columnconfigure(0,weight=1);win.rowconfigure(1,weight=1)
   tools=ttk.Frame(win,padding=10);tools.grid(row=0,column=0,sticky='ew');tools.columnconfigure(0,weight=1);query=tk.StringVar();sort=tk.StringVar(value='Name')
   search=ttk.Entry(tools,textvariable=query);search.grid(row=0,column=0,sticky='ew',padx=(0,6));picker_filter=self.filter_button(tools,lambda:refresh());picker_filter.grid(row=0,column=1,padx=4);ttk.Combobox(tools,textvariable=sort,values=['Name','Card ID','ATK','DEF','Level'],state='readonly',width=11).grid(row=0,column=2,padx=4)
   body=ttk.Frame(win,padding=(10,0,10,8));body.grid(row=1,column=0,sticky='nsew')
-  for grid_index in range(4):body.columnconfigure(grid_index,weight=1);body.rowconfigure(grid_index,weight=1)
+  for column in range(6):body.columnconfigure(column,weight=1,uniform="cards")
+  for row in range(2):body.rowconfigure(row,weight=1)
   footer=ttk.Frame(win,padding=10);footer.grid(row=2,column=0,sticky='ew');page={'value':0};images=[]
   count=ttk.Label(footer);count.pack(side='left');previous=ttk.Button(footer,text='← Previous');previous.pack(side='right',padx=4);next_page=ttk.Button(footer,text='Next →');next_page.pack(side='right',padx=4)
-  multiple=index<2 and self.material_modes[index].get()=='Multiple cards'
+  multiple=index<2
   working=set(self.material_choices[index]) if multiple else set()
-  selected_only=tk.BooleanVar(value=False)
+  filtered_ids=set()
+  def bulk(select):
+   if select:working.update(filtered_ids)
+   else:working.difference_update(filtered_ids)
+   refresh()
   def apply_selection():
    if not working:return
    self.material_choices[index]=working.copy()
    self.fv[index].set(self.card_option_for_id(min(working)))
-   self.update_material_mode(index)
+   self.preview_fusion_card(index);self.update_fusion_summary()
    win.destroy()
   if multiple:
-   ttk.Checkbutton(tools,text='Selected only',variable=selected_only,command=lambda:refresh()).grid(row=0,column=3,padx=3)
-   apply_button=ttk.Button(footer,text='Use selected cards',command=apply_selection);apply_button.pack(side='left',padx=6)
-   ttk.Button(footer,text='Clear selection',command=lambda:(working.clear(),refresh())).pack(side='left')
+   actions=ttk.Frame(win,padding=(10,4));actions.grid(row=3,column=0,sticky='ew')
+   ttk.Button(actions,text='Select all matches',command=lambda:bulk(True)).pack(side='left')
+   ttk.Button(actions,text='Deselect all matches',command=lambda:bulk(False)).pack(side='left',padx=5)
+   apply_button=ttk.Button(actions,text='Use selected cards',command=apply_selection);apply_button.pack(side='right')
   def set_card(cid):
    if multiple:
     working.symmetric_difference_update((cid,))
@@ -478,25 +414,29 @@ class App(tk.Tk):
   def refresh(*_):
    for child in body.winfo_children():child.destroy()
    images.clear();entries=list(self.cards.cards.items());needle=query.get().strip().lower()
-   entries=[(cid,c) for cid,c in entries if picker_filter.criteria.matches(c) and (not selected_only.get() or cid in working)]
+   entries=[(cid,c) for cid,c in entries if picker_filter.criteria.matches(c)]
    if needle:entries=[(cid,c) for cid,c in entries if needle in c.name.lower() or needle in str(cid)]
+   filtered_ids.clear();filtered_ids.update(cid for cid,_ in entries)
    if sort.get()=='Card ID':entries.sort(key=lambda x:x[0])
    elif sort.get()=='ATK':entries.sort(key=lambda x:(x[1].atk,x[1].name.lower()))
    elif sort.get()=='DEF':entries.sort(key=lambda x:(x[1].def_,x[1].name.lower()))
    elif sort.get()=='Level':entries.sort(key=lambda x:(getattr(x[1],'level',0),x[1].name.lower()))
    else:entries.sort(key=lambda x:x[1].name.lower())
-   pages=max(1,(len(entries)+15)//16);page['value']=max(0,min(page['value'],pages-1));visible=entries[page['value']*16:(page['value']+1)*16];count.configure(text=f'{page["value"]+1} / {pages} pages  ·  {len(entries):,} cards')
+   pages=max(1,(len(entries)+11)//12);page['value']=max(0,min(page['value'],pages-1));visible=entries[page['value']*12:(page['value']+1)*12];count.configure(text=f'{page["value"]+1} / {pages} pages  ·  {len(entries):,} cards')
    if multiple:
-    count.configure(text=f"{len(working)} selected · Page {page['value']+1} / {pages}");apply_button.configure(state='normal' if working else 'disabled')
+    count.configure(text=f"{len(working)} selected · {len(entries)} matching · Page {page['value']+1} / {pages}");apply_button.configure(state='normal' if working else 'disabled')
    previous.configure(state='normal' if page['value'] else 'disabled');next_page.configure(state='normal' if page['value']+1<pages else 'disabled')
    for slot,(cid,card) in enumerate(visible):
-    r,cidx=divmod(slot,4);tile=ttk.Frame(body,relief='ridge',borderwidth=1,padding=5);tile.grid(row=r,column=cidx,sticky='nsew',padx=4,pady=4)
+    chosen=cid in working if multiple else cid==self.card_from_option(self.fv[index].get())
     art=self.art.get_card_art(cid)
+    photo=None
     if art:
-     photo=ImageTk.PhotoImage(self.render_card_preview(card,art).resize((86,119),Image.Resampling.LANCZOS));images.append(photo);picture=ttk.Label(tile,image=photo);picture.pack()
-    marker='✓ ' if multiple and cid in working else ''
-    ttk.Label(tile,text=f'{marker}{card.name}\n{card.atk} / {card.def_}',justify='center',wraplength=185).pack(fill='x',pady=(4,0))
-    for widget in (tile,*tile.winfo_children()):widget.bind('<Button-1>',lambda e,card_id=cid:set_card(card_id));widget.bind('<Double-1>',lambda e,card_id=cid:set_card(card_id));widget.bind('<Button-3>',lambda e,card_id=cid:picker_context(e,card_id));widget.bind('<Button-2>',lambda e,card_id=cid:picker_context(e,card_id))
+     photo=ImageTk.PhotoImage(self.render_card_preview(card,art).resize((100,138),Image.Resampling.LANCZOS));images.append(photo)
+    label=('✓ Selected' if chosen else 'Select') if photo else card.name
+    tile=tk.Button(body,text=label,compound='top',command=lambda n=cid:set_card(n),relief='sunken' if chosen else 'flat',borderwidth=2,background='#b8e893' if chosen else '#30363c',foreground='#102018' if chosen else '#e2e5e9',takefocus=True)
+    if photo:tile.configure(image=photo)
+    tile.grid(row=slot//6,column=slot%6,sticky='nsew',padx=2,pady=2)
+    tile.bind('<Button-3>',lambda e,n=cid:picker_context(e,n))
    win._picker_images=images[:]
   def picker_context(event,cid):
    menu=tk.Menu(win,tearoff=False)
@@ -513,8 +453,8 @@ class App(tk.Tk):
   a,b,r=self.ft.rows[self.ft.selected]
   for idx,cid in enumerate((a,b,r)):
    self.fv[idx].set(self.card_option_for_id(cid));self.fusion_picks[idx][0].configure(text=self.card_button_text(cid))
-   if idx<2:self.material_modes[idx].set('Specific card');self.update_material_mode(idx)
-   else:self.preview_fusion_card(idx)
+   if idx<2:self.material_choices[idx]={cid}
+   self.preview_fusion_card(idx)
   self.update_fusion_summary()
  def fusion_context_menu(self,event):
   menu = tk.Menu(self, tearoff=False)
@@ -882,11 +822,7 @@ class App(tk.Tk):
    self.collection_filter.reset()
    self.collection_filter.state(["!disabled"])
    for i in range(2):
-    self.material_filters[i].reset()
-    self.material_exceptions[i].clear()
     self.material_choices[i].clear()
-    self.material_modes[i].set('Specific card')
-    self.update_material_mode(i)
    stage='resetting card and list filters';self.reset_card_filters();self.starter_query.set('');self.starter_filter.reset();self.starter_sort.set('Name');self.fusion_query.set('');self.fusion_sort.set('Result name');self.drop_query.set('');self.drop_filter.reset();self.drop_sort.set('Card name')
    stage='building Card Studio list';self.fill()
    stage='building starter deck card list';self.fill_starter_cards()

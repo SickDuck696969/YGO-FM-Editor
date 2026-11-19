@@ -1,69 +1,107 @@
 function ruleIds(i) {
-  const r = rules[i];
-  if (r?.key === "cards") return r.ids;
-  return r
-    ? game.cards
-        .filter((c) => c[r.key] === r.value && !r.except.includes(c.id))
-        .map((c) => c.id)
-    : [slots[i]];
+  return materialSets[i] ?? [slots[i]];
 }
-function pickMaterialSet(index) {
-  const draft = new Set(
-    rules[index]?.key === "cards" ? rules[index].ids : [slots[index]],
-  );
-  const dialog = $("#picker");
-  $("#pickTitle").textContent =
-    `Choose cards for Material ${index === 0 ? "A" : "B"}`;
+function pickFusionSlot(index) {
+  const material = index < 2;
+  const draft = new Set(material ? ruleIds(index) : [slots[index]]);
+  const dialog = $("#picker"),
+    pendingArt = new Set();
+  let matches = [];
+  $("#pickTitle").textContent = material
+    ? `Choose Material ${index === 0 ? "A" : "B"}`
+    : "Choose fusion result";
+  dialog.classList.add("fusion-picker");
   $("#pickContent").innerHTML =
-    `<div class="bar"><label><input type="checkbox" id="onlyChosen"> Show selected only</label><button id="clearChosen">Clear selection</button></div><div id="materialLibrary"></div><div class="dialoghead"><span id="chosenCount" aria-live="polite"></span><button class="primary" id="useChosen">Use selected cards</button></div>`;
-  delete browsers.materialPicker;
-  function draw() {
-    const restricted = $("#onlyChosen").checked;
-    library(
-      $("#materialLibrary"),
-      "materialPicker",
-      (id) => {
-        if (draft.has(id)) draft.delete(id);
-        else draft.add(id);
-        if (restricted) draw();
-        else {
-          const row = document.querySelector(
-            `#materialLibrary [data-id="${id}"]`,
-          );
-          row.classList.toggle("selected", draft.has(id));
-          row.setAttribute("aria-pressed", String(draft.has(id)));
+    `<div id="fusionLibrary"></div><footer class="fusion-footer">${material ? '<button id="selectMatches">Select all matches</button><button id="deselectMatches">Deselect all matches</button>' : ""}<span id="chosenCount" role="status"></span>${material ? '<button id="useChosen" class="primary">Use selected cards</button>' : ""}</footer>`;
+  function update() {
+    for (const card of dialog.querySelectorAll("button[data-id]"))
+      card.setAttribute("aria-pressed", String(draft.has(+card.dataset.id)));
+    $("#chosenCount").textContent = material
+      ? `${draft.size} selected · ${matches.length} matching`
+      : `${matches.length} matching`;
+    if (material) {
+      $("#useChosen").disabled = !draft.size;
+      $("#selectMatches").disabled = !matches.some((id) => !draft.has(id));
+      $("#deselectMatches").disabled = !matches.some((id) => draft.has(id));
+    }
+  }
+  function tile(id) {
+    const c = game.cards[id - 1],
+      pos = id - 1;
+    const color =
+      ["#449e79", "#bc5d87", "#6e8db4", "#449e79"][c.type_id - 20] || "#bf9b62";
+    return `<button data-id="${id}" class="fusion-tile" aria-pressed="${draft.has(id)}" style="--frame:${color}"><strong>${esc(c.name)}</strong><span class="face-art" style="background-position:${((pos % 16) * 100) / 15}% ${(Math.floor(pos / 16) * 100) / 45}%"></span><span class="face-info">★ ${c.level} · ${esc(meta.types[c.type_id])}<br>${esc(meta.attributes[c.attribute])} · ${esc(meta.stars[c.gs1])} / ${esc(meta.stars[c.gs2])}<br>ATK ${c.atk} · DEF ${c.def_}</span></button>`;
+  }
+  const cache = artCache;
+  function paint() {
+    for (const button of dialog.querySelectorAll(".fusion-tile")) {
+      const src = cache[button.dataset.id];
+      if (src)
+        button.querySelector(".face-art").style.background =
+          `center / cover url("${src}")`;
+    }
+  }
+  delete browsers.fusionPicker;
+  library(
+    $("#fusionLibrary"),
+    "fusionPicker",
+    (id) => {
+      if (!material) {
+        slots[index] = id;
+        dialog.close();
+        return;
+      }
+      if (draft.has(id)) draft.delete(id);
+      else draft.add(id);
+      update();
+    },
+    {
+      tile,
+      onMatches(all, results) {
+        matches = all;
+        update();
+        paint();
+        const ids = [...results.querySelectorAll(".fusion-tile")]
+          .map((b) => +b.dataset.id)
+          .filter((id) => !cache[id] && !pendingArt.has(id));
+        if (ids.length) {
+          ids.forEach((id) => pendingArt.add(id));
+          rpc("pickerArt", { ids })
+            .then((images) => {
+              Object.assign(cache, images);
+              if (dialog.open && dialog.contains(results)) paint();
+            })
+            .catch(fail)
+            .finally(() => ids.forEach((id) => pendingArt.delete(id)));
         }
-        count();
       },
-      { ids: restricted ? [...draft] : null, selected: draft },
-    );
-    count();
+    },
+  );
+  if (material) {
+    $("#selectMatches").onclick = () => {
+      matches.forEach((id) => draft.add(id));
+      update();
+    };
+    $("#deselectMatches").onclick = () => {
+      matches.forEach((id) => draft.delete(id));
+      update();
+    };
+    $("#useChosen").onclick = () => {
+      materialSets[index] = [...draft];
+      slots[index] = materialSets[index][0];
+      dialog.close();
+    };
   }
-  function count() {
-    $("#chosenCount").textContent = `${draft.size} selected`;
-    $("#useChosen").disabled = !draft.size;
-  }
-  $("#onlyChosen").onchange = draw;
-  $("#clearChosen").onclick = () => {
-    draft.clear();
-    draw();
-  };
-  $("#useChosen").onclick = () => {
-    if (!draft.size) return;
-    slots[index] = draft.values().next().value;
-    rules[index] = { key: "cards", ids: [...draft] };
-    dialog.close();
-  };
-  draw();
   dialog.addEventListener(
     "close",
     () => {
+      dialog.classList.remove("fusion-picker");
       if (page === "fusion") render();
     },
     { once: true },
   );
   dialog.showModal();
-  $("#materialLibrary input[type=search]").focus();
+  $("#fusionLibrary input[type=search]").focus();
 }
 function pairCount() {
   const a = ruleIds(0),
@@ -72,106 +110,20 @@ function pairCount() {
   return a.length * b.size - (shared * (shared - 1)) / 2;
 }
 function fusionTab() {
-  const keys = {
-    type_id: meta.types,
-    attribute: meta.attributes,
-    level: Array.from({ length: 13 }, (_, i) => String(i)),
-  };
-  const modes = [
-    ["", "Specific card"],
-    ["cards", "Multiple cards"],
-    ["type_id", "By type"],
-    ["attribute", "By attribute"],
-    ["level", "By level"],
-  ];
   $("#view").innerHTML =
     title("fusion", btn("Reset all recipes", "resetRecipes")) +
     `<div class="stack"><section class="panel"><div class="columns">${slots
       .map((id, i) => {
-        const r = rules[i];
-        const manual = r?.key === "cards";
-        const label = manual
-          ? r.ids.length === 1
-            ? cidName(r.ids[0])
-            : `${cidName(r.ids[0])} + ${r.ids.length - 1} more`
-          : r
-            ? `${keys[r.key][r.value]} · ${ruleIds(i).length} cards`
-            : cidName(id);
-        return `<div><h3>${["Material A", "Material B", "Result"][i]}</h3><button data-slot="${i}" class="slot">${thumb(r ? ruleIds(i)[0] || id : id)}<span>${esc(label)}</span></button>${i < 2 ? `<div class="bar"><select data-mode="${i}" aria-label="Material rule">${modes.map(([k, v]) => `<option value="${k}" ${k === (r?.key || "") ? "selected" : ""}>${v}</option>`).join("")}</select>${r && !manual ? `<select data-val="${i}" aria-label="Material value">${keys[r.key].map((v, j) => `<option value="${j}" ${r.value === j ? "selected" : ""}>${esc(v)}</option>`).join("")}</select><button data-ex="${i}">Exceptions (${r.except.length})</button>` : ""}</div>` : ""}</div>`;
+        const ids = i < 2 ? ruleIds(i) : [id];
+        const label =
+          cidName(id) + (ids.length > 1 ? ` + ${ids.length - 1} more` : "");
+        return `<div><h3>${["Material A", "Material B", "Result"][i]}</h3><button data-slot="${i}" class="slot">${thumb(id)}<span>${esc(label)}</span></button></div>`;
       })
       .join(
         "",
       )}</div><div class="actions">${btn("Add / update recipe", "applyRecipe", "primary")}${btn("Delete recipe", "deleteRecipe")}<small>${pairCount().toLocaleString()} unique material pairs</small></div></section><section class="panel"><h2>Recipe library</h2><div class="bar"><input type="search" id="fusionQuery" placeholder="Search recipes" aria-label="Search recipes" value="${esc(fusionQuery)}"><select id="scope" aria-label="Search scope">${["everywhere", "result", "material"].map((v) => `<option ${v === fusionScope ? "selected" : ""}>${v}</option>`).join("")}</select></div><div id="recipes"></div></section></div>`;
-  document.querySelectorAll("[data-slot]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const i = +b.dataset.slot;
-        if (rules[i]?.key === "cards") return pickMaterialSet(i);
-        pick(`Choose ${i === 2 ? "result" : "material"}`, (id) => {
-          slots[i] = id;
-          if (i < 2) rules[i] = null;
-          render();
-        });
-      }),
-  );
-  document.querySelectorAll("[data-mode]").forEach(
-    (s) =>
-      (s.onchange = () => {
-        if (s.value === "cards") return pickMaterialSet(+s.dataset.mode);
-        rules[+s.dataset.mode] = s.value
-          ? { key: s.value, value: 0, except: [] }
-          : null;
-        render();
-      }),
-  );
-  document.querySelectorAll("[data-val]").forEach(
-    (s) =>
-      (s.onchange = () => {
-        const r = rules[+s.dataset.val];
-        r.value = +s.value;
-        r.except = [];
-        render();
-      }),
-  );
-  document.querySelectorAll("[data-ex]").forEach(
-    (b) =>
-      (b.onclick = () => {
-        const r = rules[+b.dataset.ex];
-        $("#pickTitle").textContent = "Material exceptions";
-        delete browsers.exceptions;
-        const ids = game.cards
-          .filter((c) => c[r.key] === r.value)
-          .map((c) => c.id);
-        function draw() {
-          library(
-            $("#pickContent"),
-            "exceptions",
-            (id) => {
-              r.except = r.except.includes(id)
-                ? r.except.filter((k) => k !== id)
-                : [...r.except, id];
-              draw();
-            },
-            {
-              ids,
-              summary: (id) =>
-                r.except.includes(id)
-                  ? "Excluded · click to include"
-                  : "Included · click to exclude",
-            },
-          );
-        }
-        draw();
-        $("#picker").showModal();
-        $("#picker").addEventListener(
-          "close",
-          () => {
-            if (page === "fusion") render();
-          },
-          { once: true },
-        );
-      }),
-  );
+  for (const button of document.querySelectorAll("[data-slot]"))
+    button.onclick = () => pickFusionSlot(+button.dataset.slot);
   async function changeRecipe(remove) {
     const a = ruleIds(0),
       b = ruleIds(1);
@@ -239,7 +191,7 @@ function fusionTab() {
       const b = e.target.closest("[data-recipe]");
       if (b) {
         slots = b.dataset.recipe.split(",").map(Number);
-        rules = [null, null];
+        materialSets = [null, null];
         render();
       }
     };

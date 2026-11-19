@@ -62,7 +62,7 @@ let deck = [],
   player = "PLAYER",
   chips = 0,
   slots = [1, 2, 3],
-  rules = [null, null],
+  materialSets = [null, null],
   opponent = 0,
   rank = 0,
   weights = [];
@@ -208,12 +208,15 @@ function row(id, sub = "", selected = false, toggle = false) {
 function paginate(total, pg, n) {
   return `<div class="pagebar"><button data-prev ${pg === 0 ? "disabled" : ""}>← Previous</button><span>${total ? `${pg * n + 1}–${Math.min((pg + 1) * n, total)} of ${total.toLocaleString()}` : "0 matches"}</span><button data-next ${(pg + 1) * n >= total ? "disabled" : ""}>Next →</button></div>`;
 }
-function library(
-  root,
-  key,
-  choose,
-  { ids = null, context = null, summary = null, selected = 0 } = {},
-) {
+function library(root, key, choose, options = {}) {
+  const {
+    ids = null,
+    context = null,
+    summary = null,
+    selected = 0,
+    tile,
+    onMatches,
+  } = options;
   const state = (browsers[key] ||= {
     q: "",
     sort: "id",
@@ -289,19 +292,22 @@ function library(
       Math.min(state.page, Math.ceil(match.length / n) - 1),
     );
     const results = root.querySelector(".results");
-    results.innerHTML = `<div class="list">${
+    results.innerHTML = `<div class="list ${tile ? "fusion-grid" : ""}">${
       match
         .slice(state.page * n, (state.page + 1) * n)
         .map((id) =>
-          row(
-            id,
-            summary?.(id),
-            selected instanceof Set ? selected.has(id) : id === selected,
-            selected instanceof Set,
-          ),
+          tile
+            ? tile(id)
+            : row(
+                id,
+                summary?.(id),
+                selected instanceof Set ? selected.has(id) : id === selected,
+                selected instanceof Set,
+              ),
         )
         .join("") || '<div class="empty">No matching cards.</div>'
     }</div>${paginate(match.length, state.page, n)}`;
+    onMatches?.(match, results);
     results.querySelector("[data-prev]").onclick = () => {
       state.page--;
       draw();
@@ -344,7 +350,7 @@ function library(
   if (game)
     root.querySelector("[data-clear]").onclick = () => {
       delete browsers[key];
-      library(root, key, choose, { ids, context, summary, selected });
+      library(root, key, choose, options);
     };
   draw();
 }
@@ -402,7 +408,7 @@ async function openDisc(files) {
     delete game.atlas;
     active = 1;
     slots = [1, 2, 3];
-    rules = [null, null];
+    materialSets = [null, null];
     deck = [];
     reward = null;
     opponent = rank = fusionPage = 0;
