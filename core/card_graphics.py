@@ -102,7 +102,16 @@ class CardGraphicsDatabase:
             resized = image.resize((LARGE_WIDTH, LARGE_HEIGHT), Image.Resampling.LANCZOS)
         else:
             resized = image.copy()
-        self._custom_artworks[card_id] = resized
+        original = self._cached_images.get(card_id)
+        if original is None:
+            original = self._extract_large_art(card_id)
+        if original is not None and resized.convert("RGB").tobytes() == original.convert("RGB").tobytes():
+            self.clear_custom_art(card_id)
+        else:
+            self._custom_artworks[card_id] = resized
+
+    def has_custom_art(self, card_id: int) -> bool:
+        return card_id in self._custom_artworks
 
     def clear_custom_art(self, card_id: int):
         """Removes custom artwork, reverting to original game art."""

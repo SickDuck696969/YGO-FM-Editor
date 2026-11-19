@@ -10,7 +10,7 @@ Choose **Open disc image** and select your USA SLUS-01411 BIN, IMG or ISO. For a
 
 In **Fusion lab**, click either material slot to open the card grid. Search, sort or filter the cards, then choose individually or use **Select all matches** and **Deselect all matches** for the entire filtered grid. Scroll to browse more cards, or turn on **Show selected only** to review your choices. Confirm with **Use selected cards**. Click the result slot to pick one card, then apply the recipe.
 
-Use **Apply card changes** to stage the selected card. In **Rewards & export**, build and download a BPS patch or the patched disc. Raw disc exports have two download links. Keep the BIN and CUE together and open the CUE in DuckStation. Starter decks and edited saves download from their own tabs. Edits live in the current browser tab until downloaded.
+Use **Apply card changes** to stage the selected card. In Card Studio, **Changed cards only** shows cards with data or artwork edits relative to the disc you opened. In **Rewards & export**, build and download a BPS patch or the patched disc. Raw disc exports have two download links. Keep the BIN and CUE together and open the CUE in DuckStation. Starter decks and edited saves download from their own tabs. Edits live in the current browser tab until downloaded.
 
 To serve the browser version locally, run `python tools/build_pages.py`, then `python -m http.server 8000 --directory dist/pages` and open `http://localhost:8000`. The build downloads a pinned Pyodide runtime and Pillow. GitHub Actions builds and deploys the same static files on pushes to `master`.
 

@@ -112,6 +112,9 @@ class App(tk.Tk):
   return FilterButton(parent, lambda: self.cards.cards.values(), refresh, label)
  def card_ui(self):
   p=self.cards_page;p.columnconfigure(0,weight=4,minsize=360);p.columnconfigure(1,weight=6,minsize=600);p.rowconfigure(1,weight=1);self.query=tk.StringVar();self.card_sort=tk.StringVar(value='Name');tools=ttk.Frame(p);tools.grid(row=0,column=0,sticky='ew');tools.columnconfigure(0,weight=1);q=ttk.Entry(tools,textvariable=self.query);q.grid(row=0,column=0,sticky='ew');q.bind('<KeyRelease>',lambda e:self.fill());self.card_filter=self.filter_button(tools,self.fill);self.card_filter.grid(row=0,column=1,padx=4);ttk.Combobox(tools,textvariable=self.card_sort,values=['Name','Card ID','ATK','DEF','Level'],state='readonly',width=10).grid(row=0,column=2,padx=4);self.card_sort.trace_add('write',lambda *_:self.fill());ttk.Button(tools,text='Reset filters',command=self.reset_card_filters).grid(row=0,column=3)
+  self.changed_cards_only=tk.BooleanVar(value=False)
+  self.changed_cards_toggle=ttk.Checkbutton(tools,text='Changed cards only (0)',variable=self.changed_cards_only,command=self.fill)
+  self.changed_cards_toggle.grid(row=1,column=0,columnspan=4,sticky='w')
   card_list=ttk.Frame(p);card_list.grid(row=1,column=0,sticky='nsew',pady=8);card_list.columnconfigure(0,weight=1);card_list.rowconfigure(0,weight=1);self.tree=ttk.Treeview(card_list,show='tree');self.tree.heading('#0',text='CARD · TYPE · ATTRIBUTE · GUARDIAN · LEVEL · ATK / DEF');self.tree.column('#0',width=360);self.tree.grid(row=0,column=0,sticky='nsew');card_scroll=ttk.Scrollbar(card_list,orient='vertical',command=self.tree.yview);card_scroll.grid(row=0,column=1,sticky='ns');self.tree.configure(yscrollcommand=card_scroll.set);self.tree.bind('<<TreeviewSelect>>',self.select);self.tree.bind('<Button-3>',self.card_context_menu);self.tree.bind('<Button-2>',self.card_context_menu)
   ttk.Label(p,text='Game icons: type · attribute · guardian stars 1 and 2 · level star',font=('Segoe UI',9)).grid(row=2,column=0,sticky='w')
   editor=ttk.Frame(p);editor.grid(row=0,column=1,rowspan=2,sticky='nsew',padx=(14,0));editor.columnconfigure(0,weight=0,minsize=280);editor.columnconfigure(1,weight=1,minsize=300);editor.rowconfigure(0,weight=1)
@@ -156,6 +159,11 @@ class App(tk.Tk):
  def fill(self):
   selected=self.tree.selection()[0] if self.tree.selection() else None;self.tree.delete(*self.tree.get_children());q=self.query.get().lower()
   entries=list(self.cards.cards.items())
+  originals=getattr(self,'original_cards',{})
+  changed_ids={cid for cid,c in entries if cid in originals and
+               (vars(c)!=vars(originals[cid]) or self.art.has_custom_art(cid))}
+  self.changed_cards_toggle.configure(text=f'Changed cards only ({len(changed_ids)})')
+  if self.changed_cards_only.get():entries=[(cid,c) for cid,c in entries if cid in changed_ids]
   entries=[(i,c) for i,c in entries if self.card_filter.criteria.matches(c)]
   if self.card_sort.get()=='Card ID':entries.sort(key=lambda x:x[0])
   elif self.card_sort.get()=='ATK':entries.sort(key=lambda x:(x[1].atk,x[1].name))
@@ -166,7 +174,7 @@ class App(tk.Tk):
    if not q or q in c.name.lower() or q in str(i):self.tree.insert('','end',iid=str(i),text=f'{c.name}   ·   {c.atk} / {c.def_}',image=self.mini_photo(i))
   if selected and self.tree.exists(selected):self.tree.selection_set(selected);self.tree.focus(selected)
  def reset_card_filters(self):
-  self.query.set('');self.card_filter.reset();self.card_sort.set('Name');self.fill()
+  self.changed_cards_only.set(False);self.query.set('');self.card_filter.reset();self.card_sort.set('Name');self.fill()
  def card_context_menu(self,event):
   row=self.tree.identify_row(event.y)
   if not row:return
@@ -184,7 +192,7 @@ class App(tk.Tk):
   self.show_page('fusion')
  def reset_card(self):
   if not hasattr(self,'original_cards') or self.current not in self.original_cards:return
-  self.cards.cards[self.current]=copy.deepcopy(self.original_cards[self.current]);self.art.clear_custom_art(self.current);self.mini_photos.pop(self.current,None);self.dirty=True;self.fill();self.fill_starter_cards();self.show_card_preview(self.current);
+  self.cards.cards[self.current]=copy.deepcopy(self.original_cards[self.current]);self.art.clear_custom_art(self.current);self.mini_photos.pop(self.current,None);self.dirty=True;self.fill();self.fill_starter_cards();self.load_card_form();
   if self.tree.exists(str(self.current)):self.tree.selection_set(str(self.current));self.select()
   self.set_card_picker_values();self.load_fusions();self.refresh_deck_view();self.load_drops()
  def reset_all_cards(self):
@@ -192,10 +200,13 @@ class App(tk.Tk):
   self.cards.cards=copy.deepcopy(self.original_cards);self.art._custom_artworks.clear();self.art._cached_images.clear();self.mini_photos.clear();self.dirty=True;self.fill();self.fill_starter_cards();self.set_card_picker_values();self.load_fusions();self.refresh_deck_view();self.load_drops()
   target=str(self.current) if self.tree.exists(str(self.current)) else (self.tree.get_children('')[0] if self.tree.get_children('') else None)
   if target:self.tree.selection_set(target);self.tree.focus(target);self.tree.see(target);self.select()
+  else:self.load_card_form()
   self.status.configure(text='All card data and artwork edits reset to the loaded ROM.')
  def select(self,_=None):
   if not self.tree.selection():return
-  self.current=int(self.tree.selection()[0]);c=self.cards.get(self.current)
+  self.current=int(self.tree.selection()[0]);self.load_card_form()
+ def load_card_form(self):
+  c=self.cards.get(self.current)
   for k in ('name','atk','def_','password','star_cost'):self.v[k].set(str(getattr(c,k)))
   self.v['type_id'].set(CARD_TYPES[c.type_id] if 0<=c.type_id<len(CARD_TYPES) else CARD_TYPES[0]);self.v['gs1'].set(GUARDIAN_STARS[c.gs1] if 0<=c.gs1<len(GUARDIAN_STARS) else GUARDIAN_STARS[0]);self.v['gs2'].set(GUARDIAN_STARS[c.gs2] if 0<=c.gs2<len(GUARDIAN_STARS) else GUARDIAN_STARS[0]);self.v['level'].set(str(getattr(c,'level',0)));self.v['attribute'].set(ATTRIBUTES[c.attribute] if 0<=c.attribute<len(ATTRIBUTES) else ATTRIBUTES[0]);self.desc.delete('1.0','end');self.desc.insert('1.0',c.description);im=self.art.get_card_art(self.current)
   self.show_card_preview(self.current)

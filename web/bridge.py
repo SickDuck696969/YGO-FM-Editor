@@ -179,7 +179,7 @@ def handle(op, args, progress=lambda p, text: None):
             im = source.convert("RGB")
         if op == "artEdit":
             game.art.set_custom_art(args["id"], im)
-            return png(game.art.get_card_art(args["id"]))
+            return {"image": png(game.art.get_card_art(args["id"])), "custom": game.art.has_custom_art(args["id"])}
         game.portrait_edits[args["id"]] = im
         return png(im)
     if op == "card":

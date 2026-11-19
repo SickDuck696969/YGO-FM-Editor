@@ -389,7 +389,9 @@ function home() {
       )}</div><p class="info sectionhead">Disc images and saves stay in this browser. Download your work before closing the tab.</p>`;
   on("heroOpen", () => (game ? go("cards") : $("#discFile").click()));
 }
-let atlasUrl;
+let atlasUrl,
+  originalCards = [],
+  changedCardsOnly = false;
 async function openDisc(files) {
   if (!files.length) return;
   if (
@@ -401,9 +403,13 @@ async function openDisc(files) {
     await ready();
     const next = await rpc("disc", {}, files);
     game = next;
+    originalCards = next.cards.slice();
+    changedCardsOnly = false;
     discName =
       files.find((f) => !/\.(cue|ccd)$/i.test(f.name))?.name || files[0].name;
-    const imageUrl = URL.createObjectURL(await (await fetch(game.atlas)).blob());
+    const imageUrl = URL.createObjectURL(
+      await (await fetch(game.atlas)).blob(),
+    );
     document.documentElement.style.setProperty("--atlas", `url("${imageUrl}")`);
     if (atlasUrl) URL.revokeObjectURL(atlasUrl);
     atlasUrl = imageUrl;
@@ -450,18 +456,36 @@ function cardsTab() {
     token = revision;
   $("#view").innerHTML =
     title("cards", btn("Reset all card edits", "resetCards")) +
-    `<div class="split"><section class="panel"><h2>Card library</h2><div id="library"></div></section><section class="panel"><div class="previewwrap"><div class="preview"><strong>${esc(c.name)}</strong><img id="fullArt" alt="${esc(c.name)} artwork"><small>★ ${c.level} · ${esc(meta.types[c.type_id])}<br>ATK ${c.atk} / DEF ${c.def_}</small></div><div><div class="overline">Card ${String(c.id).padStart(3, "0")}</div><h2>${esc(c.name)}</h2>${btn("Change artwork", "changeArt")}</div></div><form id="cardForm" class="cardform">${field("Name", "name", c.name, 'maxlength="36" required')}${field("Password", "password", c.password, 'pattern="[0-9a-fA-F]{8}" required')}${field("Attack", "atk", c.atk, 'min="0" max="5110" step="10" required', "number")}${field("Defense", "def_", c.def_, 'min="0" max="5110" step="10" required', "number")}${select("Type", "type_id", meta.types, c.type_id)}${select("Attribute", "attribute", meta.attributes, c.attribute)}${select("Guardian Star 1", "gs1", meta.stars, c.gs1)}${select("Guardian Star 2", "gs2", meta.stars, c.gs2)}${field("Level", "level", c.level, 'min="0" max="12" required', "number")}${field("Starchip cost", "star_cost", c.star_cost, 'min="0" max="999999" required', "number")}<label class="field wide">Description<textarea name="description" rows="3">${esc(c.description)}</textarea></label><button class="primary wide">Apply card changes</button></form></section></div>`;
-  library(
-    $("#library"),
-    "cards",
-    (id) => {
-      if (clearDraft()) {
-        active = id;
-        render();
-      }
-    },
-    { selected: active },
-  );
+    `<div class="split"><section class="panel"><h2>Card library</h2><label><input id="changedOnly" type="checkbox" ${changedCardsOnly ? "checked" : ""}> Changed cards only <span id="changeCount"></span></label><div id="library"></div></section><section class="panel"><div class="previewwrap"><div class="preview"><strong>${esc(c.name)}</strong><img id="fullArt" alt="${esc(c.name)} artwork"><small>★ ${c.level} · ${esc(meta.types[c.type_id])}<br>ATK ${c.atk} / DEF ${c.def_}</small></div><div><div class="overline">Card ${String(c.id).padStart(3, "0")}</div><h2>${esc(c.name)}</h2>${btn("Change artwork", "changeArt")}</div></div><form id="cardForm" class="cardform">${field("Name", "name", c.name, 'maxlength="36" required')}${field("Password", "password", c.password, 'pattern="[0-9a-fA-F]{8}" required')}${field("Attack", "atk", c.atk, 'min="0" max="5110" step="10" required', "number")}${field("Defense", "def_", c.def_, 'min="0" max="5110" step="10" required', "number")}${select("Type", "type_id", meta.types, c.type_id)}${select("Attribute", "attribute", meta.attributes, c.attribute)}${select("Guardian Star 1", "gs1", meta.stars, c.gs1)}${select("Guardian Star 2", "gs2", meta.stars, c.gs2)}${field("Level", "level", c.level, 'min="0" max="12" required', "number")}${field("Starchip cost", "star_cost", c.star_cost, 'min="0" max="999999" required', "number")}<label class="field wide">Description<textarea name="description" rows="3">${esc(c.description)}</textarea></label><button class="primary wide">Apply card changes</button></form></section></div>`;
+  function refreshLibrary() {
+    const changedIds = game.cards
+      .filter((card) => {
+        const original = originalCards[card.id - 1];
+        return (
+          replacements[card.id] ||
+          Object.keys(original).some((key) => card[key] !== original[key])
+        );
+      })
+      .map((card) => card.id);
+    $("#changeCount").textContent = `(${changedIds.length})`;
+    library(
+      $("#library"),
+      "cards",
+      (id) => {
+        if (clearDraft()) {
+          active = id;
+          render();
+        }
+      },
+      { selected: active, ids: changedCardsOnly ? changedIds : null },
+    );
+  }
+  $("#changedOnly").onchange = (event) => {
+    changedCardsOnly = event.target.checked;
+    if (browsers.cards) browsers.cards.page = 0;
+    refreshLibrary();
+  };
+  refreshLibrary();
   const showArt = (src) => {
     if (revision === token) $("#fullArt").src = src;
   };
@@ -497,21 +521,13 @@ function cardsTab() {
   };
   on("changeArt", () =>
     chooseImage(async (f) => {
-      const src = await rpc("artEdit", { id: c.id }, [f]);
-      artCache[c.id] = replacements[c.id] = src;
+      const { image, custom } = await rpc("artEdit", { id: c.id }, [f]);
+      artCache[c.id] = image;
+      if (custom) replacements[c.id] = image;
+      else delete replacements[c.id];
       changed();
-      showArt(src);
-      library(
-        $("#library"),
-        "cards",
-        (id) => {
-          if (clearDraft()) {
-            active = id;
-            render();
-          }
-        },
-        { selected: active },
-      );
+      showArt(image);
+      refreshLibrary();
     }),
   );
   on("resetCards", async () => {
