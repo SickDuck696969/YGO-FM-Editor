@@ -697,3 +697,12 @@ dialog::backdrop {
     width: 104px;
   }
 }
+
+#materialLibrary .row[aria-pressed]::after {
+  content: "+";
+  margin-left: auto;
+}
+#materialLibrary .row[aria-pressed="true"]::after {
+  content: "✓";
+  color: var(--accent);
+}

@@ -1,10 +1,75 @@
 function ruleIds(i) {
   const r = rules[i];
+  if (r?.key === "cards") return r.ids;
   return r
     ? game.cards
         .filter((c) => c[r.key] === r.value && !r.except.includes(c.id))
         .map((c) => c.id)
     : [slots[i]];
+}
+function pickMaterialSet(index) {
+  const draft = new Set(
+    rules[index]?.key === "cards" ? rules[index].ids : [slots[index]],
+  );
+  const dialog = $("#picker");
+  $("#pickTitle").textContent =
+    `Choose cards for Material ${index === 0 ? "A" : "B"}`;
+  $("#pickContent").innerHTML =
+    `<div class="bar"><label><input type="checkbox" id="onlyChosen"> Show selected only</label><button id="clearChosen">Clear selection</button></div><div id="materialLibrary"></div><div class="dialoghead"><span id="chosenCount" aria-live="polite"></span><button class="primary" id="useChosen">Use selected cards</button></div>`;
+  delete browsers.materialPicker;
+  function draw() {
+    const restricted = $("#onlyChosen").checked;
+    library(
+      $("#materialLibrary"),
+      "materialPicker",
+      (id) => {
+        if (draft.has(id)) draft.delete(id);
+        else draft.add(id);
+        if (restricted) draw();
+        else {
+          const row = document.querySelector(
+            `#materialLibrary [data-id="${id}"]`,
+          );
+          row.classList.toggle("selected", draft.has(id));
+          row.setAttribute("aria-pressed", String(draft.has(id)));
+        }
+        count();
+      },
+      { ids: restricted ? [...draft] : null, selected: draft },
+    );
+    count();
+  }
+  function count() {
+    $("#chosenCount").textContent = `${draft.size} selected`;
+    $("#useChosen").disabled = !draft.size;
+  }
+  $("#onlyChosen").onchange = draw;
+  $("#clearChosen").onclick = () => {
+    draft.clear();
+    draw();
+  };
+  $("#useChosen").onclick = () => {
+    if (!draft.size) return;
+    slots[index] = draft.values().next().value;
+    rules[index] = { key: "cards", ids: [...draft] };
+    dialog.close();
+  };
+  draw();
+  dialog.addEventListener(
+    "close",
+    () => {
+      if (page === "fusion") render();
+    },
+    { once: true },
+  );
+  dialog.showModal();
+  $("#materialLibrary input[type=search]").focus();
+}
+function pairCount() {
+  const a = ruleIds(0),
+    b = new Set(ruleIds(1));
+  const shared = a.filter((id) => b.has(id)).length;
+  return a.length * b.size - (shared * (shared - 1)) / 2;
 }
 function fusionTab() {
   const keys = {
@@ -14,6 +79,7 @@ function fusionTab() {
   };
   const modes = [
     ["", "Specific card"],
+    ["cards", "Multiple cards"],
     ["type_id", "By type"],
     ["attribute", "By attribute"],
     ["level", "By level"],
@@ -23,15 +89,24 @@ function fusionTab() {
     `<div class="stack"><section class="panel"><div class="columns">${slots
       .map((id, i) => {
         const r = rules[i];
-        return `<div><h3>${["Material A", "Material B", "Result"][i]}</h3><button data-slot="${i}" class="slot">${thumb(r ? ruleIds(i)[0] || id : id)}<span>${esc(r ? `${keys[r.key][r.value]} · ${ruleIds(i).length} cards` : cidName(id))}</span></button>${i < 2 ? `<div class="bar"><select data-mode="${i}" aria-label="Material rule">${modes.map(([k, v]) => `<option value="${k}" ${k === (r?.key || "") ? "selected" : ""}>${v}</option>`).join("")}</select>${r ? `<select data-val="${i}" aria-label="Material value">${keys[r.key].map((v, j) => `<option value="${j}" ${r.value === j ? "selected" : ""}>${esc(v)}</option>`).join("")}</select><button data-ex="${i}">Exceptions (${r.except.length})</button>` : ""}</div>` : ""}</div>`;
+        const manual = r?.key === "cards";
+        const label = manual
+          ? r.ids.length === 1
+            ? cidName(r.ids[0])
+            : `${cidName(r.ids[0])} + ${r.ids.length - 1} more`
+          : r
+            ? `${keys[r.key][r.value]} · ${ruleIds(i).length} cards`
+            : cidName(id);
+        return `<div><h3>${["Material A", "Material B", "Result"][i]}</h3><button data-slot="${i}" class="slot">${thumb(r ? ruleIds(i)[0] || id : id)}<span>${esc(label)}</span></button>${i < 2 ? `<div class="bar"><select data-mode="${i}" aria-label="Material rule">${modes.map(([k, v]) => `<option value="${k}" ${k === (r?.key || "") ? "selected" : ""}>${v}</option>`).join("")}</select>${r && !manual ? `<select data-val="${i}" aria-label="Material value">${keys[r.key].map((v, j) => `<option value="${j}" ${r.value === j ? "selected" : ""}>${esc(v)}</option>`).join("")}</select><button data-ex="${i}">Exceptions (${r.except.length})</button>` : ""}</div>` : ""}</div>`;
       })
       .join(
         "",
-      )}</div><div class="actions">${btn("Add / update recipe", "applyRecipe", "primary")}${btn("Delete recipe", "deleteRecipe")}</div></section><section class="panel"><h2>Recipe library</h2><div class="bar"><input type="search" id="fusionQuery" placeholder="Search recipes" aria-label="Search recipes" value="${esc(fusionQuery)}"><select id="scope" aria-label="Search scope">${["everywhere", "result", "material"].map((v) => `<option ${v === fusionScope ? "selected" : ""}>${v}</option>`).join("")}</select></div><div id="recipes"></div></section></div>`;
+      )}</div><div class="actions">${btn("Add / update recipe", "applyRecipe", "primary")}${btn("Delete recipe", "deleteRecipe")}<small>${pairCount().toLocaleString()} unique material pairs</small></div></section><section class="panel"><h2>Recipe library</h2><div class="bar"><input type="search" id="fusionQuery" placeholder="Search recipes" aria-label="Search recipes" value="${esc(fusionQuery)}"><select id="scope" aria-label="Search scope">${["everywhere", "result", "material"].map((v) => `<option ${v === fusionScope ? "selected" : ""}>${v}</option>`).join("")}</select></div><div id="recipes"></div></section></div>`;
   document.querySelectorAll("[data-slot]").forEach(
     (b) =>
       (b.onclick = () => {
         const i = +b.dataset.slot;
+        if (rules[i]?.key === "cards") return pickMaterialSet(i);
         pick(`Choose ${i === 2 ? "result" : "material"}`, (id) => {
           slots[i] = id;
           if (i < 2) rules[i] = null;
@@ -42,6 +117,7 @@ function fusionTab() {
   document.querySelectorAll("[data-mode]").forEach(
     (s) =>
       (s.onchange = () => {
+        if (s.value === "cards") return pickMaterialSet(+s.dataset.mode);
         rules[+s.dataset.mode] = s.value
           ? { key: s.value, value: 0, except: [] }
           : null;

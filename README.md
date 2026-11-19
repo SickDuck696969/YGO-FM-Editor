@@ -8,6 +8,8 @@ A browser and Windows desktop editor for the USA Yu-Gi-Oh! Forbidden Memories di
 
 Choose **Open disc image** and select your USA SLUS-01411 BIN, IMG or ISO. For a single-track CUE or CCD, select its data file alongside it. The editor reads the game artwork, opponent portraits and databases on your device. To edit an existing memory card independently, choose **Save editor → Open save file**.
 
+In **Fusion lab**, choose **Multiple cards** for either material, select cards by name or artwork, and confirm with **Use selected cards**. Choose one result and apply the recipe to create each unique pairing between the two materials.
+
 Use **Apply card changes** to stage the selected card. In **Rewards & export**, build and download a BPS patch or the patched disc. Raw disc exports have two download links. Keep the BIN and CUE together and open the CUE in DuckStation. Starter decks and edited saves download from their own tabs. Edits live in the current browser tab until downloaded.
 
 To serve the browser version locally, run `python tools/build_pages.py`, then `python -m http.server 8000 --directory dist/pages` and open `http://localhost:8000`. The build downloads a pinned Pyodide runtime and Pillow. GitHub Actions builds and deploys the same static files on pushes to `master`.

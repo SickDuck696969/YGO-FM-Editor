@@ -201,9 +201,9 @@ function badge(key, i, labels) {
     ? `<img class="tagicon" src="${src}" alt="${label}" title="${label}">`
     : label;
 }
-function row(id, sub = "", selected = false) {
+function row(id, sub = "", selected = false, toggle = false) {
   const c = game?.cards[id - 1];
-  return `<button class="row ${selected ? "selected" : ""}" data-id="${id}">${thumb(id)}<span><strong>${esc(cidName(id))}</strong><small>${sub || (!c ? `#${id}` : `#${id} · ${badge("type", c.type_id, meta.types)} ${badge("attribute", c.attribute, meta.attributes)} ${badge("guardian", c.gs1, meta.stars)} ${badge("guardian", c.gs2, meta.stars)} · ★ ${c.level} · ${c.atk} / ${c.def_}`)}</small></span></button>`;
+  return `<button class="row ${selected ? "selected" : ""}" data-id="${id}" ${toggle ? `aria-pressed="${selected}"` : ""}>${thumb(id)}<span><strong>${esc(cidName(id))}</strong><small>${sub || (!c ? `#${id}` : `#${id} · ${badge("type", c.type_id, meta.types)} ${badge("attribute", c.attribute, meta.attributes)} ${badge("guardian", c.gs1, meta.stars)} ${badge("guardian", c.gs2, meta.stars)} · ★ ${c.level} · ${c.atk} / ${c.def_}`)}</small></span></button>`;
 }
 function paginate(total, pg, n) {
   return `<div class="pagebar"><button data-prev ${pg === 0 ? "disabled" : ""}>← Previous</button><span>${total ? `${pg * n + 1}–${Math.min((pg + 1) * n, total)} of ${total.toLocaleString()}` : "0 matches"}</span><button data-next ${(pg + 1) * n >= total ? "disabled" : ""}>Next →</button></div>`;
@@ -292,7 +292,14 @@ function library(
     results.innerHTML = `<div class="list">${
       match
         .slice(state.page * n, (state.page + 1) * n)
-        .map((id) => row(id, summary?.(id), id === selected))
+        .map((id) =>
+          row(
+            id,
+            summary?.(id),
+            selected instanceof Set ? selected.has(id) : id === selected,
+            selected instanceof Set,
+          ),
+        )
         .join("") || '<div class="empty">No matching cards.</div>'
     }</div>${paginate(match.length, state.page, n)}`;
     results.querySelector("[data-prev]").onclick = () => {
